@@ -23,6 +23,9 @@
 //! | `page.nav` | Site navigation from `transform-nav`, if it ran (`items`, `prev`, `next`). |
 //! | `site.title`, `site.base_url` | From the site config. |
 //!
+//! `custom:highlight` nodes from `transform-highlight` are written as the
+//! highlighted HTML they carry; the default theme colors their tokens.
+//!
 //! Relative links to other Markdown pages (`guide.md#setup`) are rewritten
 //! to their HTML output (`guide.html#setup`), in the body and through the
 //! `link` filter in templates (`{{ item.url | link }}`).
@@ -439,6 +442,12 @@ fn render(opts: &Options, node: &Node, out: &mut String) {
             title_attr(&n.title)
         )),
         Node::LineBreak(_) => out.push_str("<br>\n"),
+        // Highlighted code from `transform-highlight`: its HTML as is.
+        Node::Custom(n)
+            if n.kind == "highlight" && n.attrs.get("html").is_some_and(|h| h.is_string()) =>
+        {
+            out.push_str(n.attrs["html"].as_str().unwrap_or_default());
+        }
         Node::Custom(n) => {
             let attrs = format!(" class=\"{}\"", escape(&n.kind));
             wrap(opts, "div", &attrs, &n.children, out, true);
@@ -494,6 +503,34 @@ mod tests {
             "{html}"
         );
         assert!(html.contains("<a href=\"index.html\">Site</a>"), "{html}");
+    }
+
+    #[test]
+    fn highlighted_code_is_written_as_is() {
+        use lsdocs_plugin_sdk::doctree::{CodeBlock, Custom};
+        let mut doc = Document::new("a.md");
+        let code = Node::CodeBlock(CodeBlock {
+            value: "x".into(),
+            ..CodeBlock::default()
+        });
+        doc.children = vec![
+            Node::Custom(Custom {
+                kind: "highlight".into(),
+                attrs: [("html".to_owned(), serde_json::json!("<pre>X</pre>\n"))].into(),
+                children: vec![code.clone()],
+                ..Custom::default()
+            }),
+            // Without its HTML, the children are rendered instead.
+            Node::Custom(Custom {
+                kind: "highlight".into(),
+                children: vec![code],
+                ..Custom::default()
+            }),
+        ];
+        assert_eq!(
+            body(&doc, &Options::default()),
+            "<pre>X</pre>\n<div class=\"highlight\"><pre><code>x</code></pre>\n</div>\n"
+        );
     }
 
     #[test]
