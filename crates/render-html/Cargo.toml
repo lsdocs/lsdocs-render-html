@@ -1,0 +1,13 @@
+[package]
+name = "lsdocs-render-html"
+description = "First-party HTML renderer plugin."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lsdocs-plugin-sdk.workspace = true
