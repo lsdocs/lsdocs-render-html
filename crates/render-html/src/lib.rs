@@ -24,6 +24,12 @@
 //!
 //! Relative links to other Markdown pages (`guide.md#setup`) are rewritten
 //! to their HTML output (`guide.html#setup`).
+//!
+//! Other options:
+//!
+//! | Option | Default | Meaning |
+//! |---|---|---|
+//! | `heading_anchors` | `true` | Add a `#` link to each heading with an id. |
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -72,11 +78,41 @@ impl Renderer for Html {
             })
             .as_ref()
             .map_err(|e| PluginError::new(e.clone()))?;
+        let options = Options::from_value(ctx.options());
         Ok(RenderResult {
-            output: render_page(env, &params.document, ctx.site())?.into_bytes(),
+            output: render_page(env, &params.document, ctx.site(), &options)?.into_bytes(),
             extension: "html".into(),
             diagnostics: vec![],
         })
+    }
+}
+
+/// Rendering options, from the plugin's `options`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Options {
+    /// Add a `#` link to each heading that has an id.
+    pub heading_anchors: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            heading_anchors: true,
+        }
+    }
+}
+
+impl Options {
+    /// Reads the options from the plugin's `options` value; missing or
+    /// mistyped ones keep their defaults.
+    pub fn from_value(value: &lsdocs_plugin_sdk::doctree::Value) -> Self {
+        let defaults = Self::default();
+        Self {
+            heading_anchors: value
+                .get("heading_anchors")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(defaults.heading_anchors),
+        }
     }
 }
 
@@ -105,10 +141,11 @@ pub fn render_page(
     env: &Environment<'_>,
     doc: &Document,
     site: &SiteInfo,
+    options: &Options,
 ) -> Result<String, minijinja::Error> {
     let depth = doc.source.matches('/').count();
     env.get_template(TEMPLATE_NAME)?.render(context! {
-        content => Value::from_safe_string(body(doc)),
+        content => Value::from_safe_string(body(doc, options)),
         page => context! {
             title => page_title(doc),
             source => &doc.source,
@@ -123,10 +160,10 @@ pub fn render_page(
     })
 }
 
-/// Renders a page with the built-in template.
+/// Renders a page with the built-in template and default options.
 pub fn page(doc: &Document, site: &SiteInfo) -> String {
     let env = environment(None, site).expect("the built-in template is valid");
-    render_page(&env, doc, site).expect("the built-in template renders")
+    render_page(&env, doc, site, &Options::default()).expect("the built-in template renders")
 }
 
 fn page_title(doc: &Document) -> String {
@@ -144,9 +181,9 @@ fn page_title(doc: &Document) -> String {
 }
 
 /// Renders the document's nodes, without a page around them.
-pub fn body(doc: &Document) -> String {
+pub fn body(doc: &Document, options: &Options) -> String {
     let mut out = String::new();
-    children(&doc.children, &mut out);
+    children(options, &doc.children, &mut out);
     out
 }
 
@@ -204,15 +241,15 @@ pub fn rewrite_link(url: &str) -> String {
     url.to_owned()
 }
 
-fn children(nodes: &[Node], out: &mut String) {
+fn children(opts: &Options, nodes: &[Node], out: &mut String) {
     for node in nodes {
-        render(node, out);
+        render(opts, node, out);
     }
 }
 
-fn wrap(tag: &str, attrs: &str, nodes: &[Node], out: &mut String, newline: bool) {
+fn wrap(opts: &Options, tag: &str, attrs: &str, nodes: &[Node], out: &mut String, newline: bool) {
     out.push_str(&format!("<{tag}{attrs}>"));
-    children(nodes, out);
+    children(opts, nodes, out);
     out.push_str(&format!("</{tag}>"));
     if newline {
         out.push('\n');
@@ -232,20 +269,24 @@ fn title_attr(title: &Option<String>) -> String {
         .unwrap_or_default()
 }
 
-fn render(node: &Node, out: &mut String) {
+fn render(opts: &Options, node: &Node, out: &mut String) {
     match node {
-        Node::Section(n) => wrap("section", &id_attr(&n.id), &n.children, out, true),
+        Node::Section(n) => wrap(opts, "section", &id_attr(&n.id), &n.children, out, true),
         Node::Heading(n) => {
             let level = n.level.clamp(1, 6);
-            wrap(
-                &format!("h{level}"),
-                &id_attr(&n.id),
-                &n.children,
-                out,
-                true,
-            );
+            out.push_str(&format!("<h{level}{}>", id_attr(&n.id)));
+            children(opts, &n.children, out);
+            if opts.heading_anchors
+                && let Some(id) = &n.id
+            {
+                out.push_str(&format!(
+                    " <a class=\"anchor\" href=\"#{}\" aria-label=\"Link to this section\">#</a>",
+                    escape(id)
+                ));
+            }
+            out.push_str(&format!("</h{level}>\n"));
         }
-        Node::Paragraph(n) => wrap("p", "", &n.children, out, true),
+        Node::Paragraph(n) => wrap(opts, "p", "", &n.children, out, true),
         Node::List(n) => {
             let (tag, attrs) = match (n.ordered, n.start) {
                 (true, Some(start)) => ("ol", format!(" start=\"{start}\"")),
@@ -253,7 +294,7 @@ fn render(node: &Node, out: &mut String) {
                 (false, _) => ("ul", String::new()),
             };
             out.push_str(&format!("<{tag}{attrs}>\n"));
-            children(&n.children, out);
+            children(opts, &n.children, out);
             out.push_str(&format!("</{tag}>\n"));
         }
         Node::ListItem(n) => {
@@ -262,12 +303,12 @@ fn render(node: &Node, out: &mut String) {
                 let mark = if checked { " checked" } else { "" };
                 out.push_str(&format!("<input type=\"checkbox\" disabled{mark}> "));
             }
-            children(&n.children, out);
+            children(opts, &n.children, out);
             out.push_str("</li>\n");
         }
         Node::BlockQuote(n) => {
             out.push_str("<blockquote>\n");
-            children(&n.children, out);
+            children(opts, &n.children, out);
             out.push_str("</blockquote>\n");
         }
         Node::CodeBlock(n) => {
@@ -285,7 +326,7 @@ fn render(node: &Node, out: &mut String) {
             out.push_str("<table>\n");
             for row in &n.children {
                 let Node::TableRow(row) = row else {
-                    render(row, out);
+                    render(opts, row, out);
                     continue;
                 };
                 let cell_tag = if row.header { "th" } else { "td" };
@@ -297,14 +338,14 @@ fn render(node: &Node, out: &mut String) {
                         Some(Align::Right) => " style=\"text-align: right\"",
                         _ => "",
                     };
-                    wrap(cell_tag, style, cell.children(), out, false);
+                    wrap(opts, cell_tag, style, cell.children(), out, false);
                 }
                 out.push_str("</tr>\n");
             }
             out.push_str("</table>\n");
         }
-        Node::TableRow(n) => wrap("tr", "", &n.children, out, true),
-        Node::TableCell(n) => wrap("td", "", &n.children, out, false),
+        Node::TableRow(n) => wrap(opts, "tr", "", &n.children, out, true),
+        Node::TableCell(n) => wrap(opts, "td", "", &n.children, out, false),
         Node::ThematicBreak(_) => out.push_str("<hr>\n"),
         Node::Raw(n) => {
             if n.format == "html" {
@@ -312,8 +353,8 @@ fn render(node: &Node, out: &mut String) {
             }
         }
         Node::Text(n) => out.push_str(&escape(&n.value)),
-        Node::Emphasis(n) => wrap("em", "", &n.children, out, false),
-        Node::Strong(n) => wrap("strong", "", &n.children, out, false),
+        Node::Emphasis(n) => wrap(opts, "em", "", &n.children, out, false),
+        Node::Strong(n) => wrap(opts, "strong", "", &n.children, out, false),
         Node::InlineCode(n) => out.push_str(&format!("<code>{}</code>", escape(&n.value))),
         Node::Link(n) => {
             let attrs = format!(
@@ -321,7 +362,7 @@ fn render(node: &Node, out: &mut String) {
                 escape(&rewrite_link(&n.url)),
                 title_attr(&n.title)
             );
-            wrap("a", &attrs, &n.children, out, false);
+            wrap(opts, "a", &attrs, &n.children, out, false);
         }
         Node::Image(n) => out.push_str(&format!(
             "<img src=\"{}\" alt=\"{}\"{}>",
@@ -332,7 +373,7 @@ fn render(node: &Node, out: &mut String) {
         Node::LineBreak(_) => out.push_str("<br>\n"),
         Node::Custom(n) => {
             let attrs = format!(" class=\"{}\"", escape(&n.kind));
-            wrap("div", &attrs, &n.children, out, true);
+            wrap(opts, "div", &attrs, &n.children, out, true);
         }
     }
 }
@@ -381,10 +422,19 @@ mod tests {
             "{html}"
         );
         assert!(
-            html.contains("<h1 id=\"t\">Tom &amp; Jerry</h1>\n<p>&lt;script&gt; <a href=\"other.html#part\">other</a></p>\n"),
+            html.contains("<h1 id=\"t\">Tom &amp; Jerry <a class=\"anchor\" href=\"#t\" aria-label=\"Link to this section\">#</a></h1>\n<p>&lt;script&gt; <a href=\"other.html#part\">other</a></p>\n"),
             "{html}"
         );
         assert!(html.contains("<a href=\"index.html\">Site</a>"), "{html}");
+    }
+
+    #[test]
+    fn heading_anchors_can_be_turned_off() {
+        let options = Options::from_value(&serde_json::json!({"heading_anchors": false}));
+        assert_eq!(
+            body(&doc("a.md"), &options).lines().next(),
+            Some("<h1 id=\"t\">Tom &amp; Jerry</h1>")
+        );
     }
 
     #[test]
@@ -410,7 +460,7 @@ mod tests {
             ..site()
         };
         let env = environment(Some("theme/page.html"), &site).unwrap();
-        let html = render_page(&env, &doc("a.md"), &site).unwrap();
+        let html = render_page(&env, &doc("a.md"), &site, &Options::default()).unwrap();
         assert!(html.starts_with("[Tom &amp; Jerry]<h1 id=\"t\">"), "{html}");
         let missing = environment(Some("theme/missing.html"), &site).unwrap_err();
         assert!(missing.starts_with("failed to read template"), "{missing}");
