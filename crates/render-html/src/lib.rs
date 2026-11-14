@@ -20,22 +20,32 @@
 //! | `page.source` | The source path, e.g. `guide/intro.md`. |
 //! | `page.metadata` | All front matter. |
 //! | `page.root` | Relative path from this page to the site root, e.g. `../`. |
+//! | `page.nav` | Site navigation from `transform-nav`, if it ran (`items`, `prev`, `next`). |
 //! | `site.title`, `site.base_url` | From the site config. |
 //!
 //! Relative links to other Markdown pages (`guide.md#setup`) are rewritten
-//! to their HTML output (`guide.html#setup`).
+//! to their HTML output (`guide.html#setup`), in the body and through the
+//! `link` filter in templates (`{{ item.url | link }}`).
+//!
+//! After every page is rendered, the plugin writes `sitemap.xml` (via the
+//! `render/site` request) if the site has an absolute `base_url`. Pages
+//! whose front matter says `sitemap: false` are left out.
 //!
 //! Other options:
 //!
 //! | Option | Default | Meaning |
 //! |---|---|---|
 //! | `heading_anchors` | `true` | Add a `#` link to each heading with an id. |
+//! | `sitemap` | `true` | Write `sitemap.xml`. Without an absolute `base_url`, `true` given explicitly is a warning. |
 
 use std::path::Path;
 use std::sync::OnceLock;
 
 use lsdocs_plugin_sdk::doctree::{Align, Document, Node};
-use lsdocs_plugin_sdk::protocol::{RenderParams, RenderResult, SiteInfo};
+use lsdocs_plugin_sdk::protocol::{
+    Diagnostic, OutputFile, RenderParams, RenderResult, RenderSiteParams, RenderSiteResult,
+    Severity, SiteInfo,
+};
 use lsdocs_plugin_sdk::{Context, Plugin, PluginError, PluginResult, Renderer};
 use minijinja::{Environment, Value, context};
 
@@ -57,8 +67,47 @@ pub struct Html {
 }
 
 impl Renderer for Html {
+    const SITE: bool = true;
+
     fn formats(&self) -> Vec<String> {
         vec!["html".into()]
+    }
+
+    async fn render_site(
+        &self,
+        params: RenderSiteParams,
+        ctx: &Context,
+    ) -> PluginResult<RenderSiteResult> {
+        let wanted = ctx.options().get("sitemap").and_then(|v| v.as_bool());
+        if wanted == Some(false) {
+            return Ok(RenderSiteResult::default());
+        }
+        let base = ctx
+            .site()
+            .base_url
+            .as_deref()
+            .filter(|url| url.starts_with("https://") || url.starts_with("http://"));
+        let Some(base) = base else {
+            let mut result = RenderSiteResult::default();
+            if wanted == Some(true) {
+                result.diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    message: "the sitemap needs an absolute `base_url` (http:// or https://); \
+                              not writing sitemap.xml"
+                        .into(),
+                    code: Some("sitemap".into()),
+                    ..Diagnostic::default()
+                });
+            }
+            return Ok(result);
+        };
+        Ok(RenderSiteResult {
+            files: vec![OutputFile {
+                path: "sitemap.xml".into(),
+                output: sitemap(base, &params).into_bytes(),
+            }],
+            diagnostics: vec![],
+        })
     }
 
     async fn render(&self, params: RenderParams, ctx: &Context) -> PluginResult<RenderResult> {
@@ -131,6 +180,10 @@ fn environment(template: Option<&str>, site: &SiteInfo) -> Result<Environment<'s
         }
     };
     let mut env = Environment::new();
+    // Escaped here, not by minijinja, which would also escape every `/`.
+    env.add_filter("link", |url: String| {
+        Value::from_safe_string(escape(&rewrite_link(&url)))
+    });
     env.add_template_owned(TEMPLATE_NAME, source)
         .map_err(|e| format!("invalid template: {e}"))?;
     Ok(env)
@@ -147,9 +200,10 @@ pub fn render_page(
     env.get_template(TEMPLATE_NAME)?.render(context! {
         content => Value::from_safe_string(body(doc, options)),
         page => context! {
-            title => page_title(doc),
+            title => doc.title().unwrap_or_else(|| doc.source.clone()),
             source => &doc.source,
             metadata => Value::from(minijinja::value::Serde(&doc.metadata)),
+            nav => doc.metadata.get("nav").map(|nav| Value::from(minijinja::value::Serde(nav))),
             // Only ever `../` repeated, so it needs no escaping.
             root => Value::from_safe_string("../".repeat(depth)),
         },
@@ -166,36 +220,50 @@ pub fn page(doc: &Document, site: &SiteInfo) -> String {
     render_page(&env, doc, site, &Options::default()).expect("the built-in template renders")
 }
 
-fn page_title(doc: &Document) -> String {
-    doc.metadata
-        .get("title")
-        .and_then(|v| v.as_str())
-        .map(str::to_owned)
-        .or_else(|| {
-            doc.descendants().find_map(|n| match n {
-                Node::Heading(h) => Some(plain_text(&h.children)),
-                _ => None,
-            })
-        })
-        .unwrap_or_else(|| doc.source.clone())
+/// A sitemap (sitemaps.org protocol) of the rendered pages, with URLs under
+/// `base`. `index.html` pages are listed by their directory URL.
+pub fn sitemap(base: &str, params: &RenderSiteParams) -> String {
+    let base = base.trim_end_matches('/');
+    let mut out = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n",
+    );
+    for page in &params.pages {
+        if page.metadata.get("sitemap").and_then(|v| v.as_bool()) == Some(false) {
+            continue;
+        }
+        let path = match page.path.strip_suffix("index.html") {
+            Some(dir) if dir.is_empty() || dir.ends_with('/') => dir,
+            _ => &page.path,
+        };
+        out.push_str(&format!(
+            "  <url><loc>{}</loc></url>\n",
+            escape(&format!("{base}/{}", url_path(path)))
+        ));
+    }
+    out.push_str("</urlset>\n");
+    out
+}
+
+/// Percent-encodes a path for use in a URL, leaving `/` and unreserved
+/// characters as they are.
+fn url_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 /// Renders the document's nodes, without a page around them.
 pub fn body(doc: &Document, options: &Options) -> String {
     let mut out = String::new();
     children(options, &doc.children, &mut out);
-    out
-}
-
-fn plain_text(nodes: &[Node]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        match node {
-            Node::Text(t) => out.push_str(&t.value),
-            Node::InlineCode(c) => out.push_str(&c.value),
-            other => out.push_str(&plain_text(other.children())),
-        }
-    }
     out
 }
 
@@ -465,6 +533,48 @@ mod tests {
         let missing = environment(Some("theme/missing.html"), &site).unwrap_err();
         assert!(missing.starts_with("failed to read template"), "{missing}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sitemaps_list_page_urls() {
+        use lsdocs_plugin_sdk::protocol::RenderedPage;
+        let page = |path: &str, metadata: serde_json::Value| RenderedPage {
+            source: String::new(),
+            path: path.into(),
+            metadata: serde_json::from_value(metadata).unwrap(),
+        };
+        let params = RenderSiteParams {
+            format: "html".into(),
+            pages: vec![
+                page("guide/index.html", serde_json::json!({})),
+                page("guide/a b.html", serde_json::json!({})),
+                page("hidden.html", serde_json::json!({"sitemap": false})),
+                page("index.html", serde_json::json!({})),
+                page("reindex.html", serde_json::json!({})),
+            ],
+        };
+        assert_eq!(
+            sitemap("https://example.com/docs/", &params),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n\
+             \x20 <url><loc>https://example.com/docs/guide/</loc></url>\n\
+             \x20 <url><loc>https://example.com/docs/guide/a%20b.html</loc></url>\n\
+             \x20 <url><loc>https://example.com/docs/</loc></url>\n\
+             \x20 <url><loc>https://example.com/docs/reindex.html</loc></url>\n\
+             </urlset>\n"
+        );
+    }
+
+    #[test]
+    fn templates_can_rewrite_links() {
+        let env = environment(None, &site()).unwrap();
+        let out = env
+            .render_str(
+                "{{ 'a/b.md#x' | link }} {{ 'https://x.org/y.md?a&b' | link }}",
+                (),
+            )
+            .unwrap();
+        assert_eq!(out, "a/b.html#x https://x.org/y.md?a&amp;b");
     }
 
     #[test]

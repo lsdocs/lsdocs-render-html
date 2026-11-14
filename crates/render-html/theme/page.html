@@ -20,10 +20,24 @@ body {
   margin: 0; color: var(--fg); background: var(--bg);
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-header, main, footer { max-width: 48rem; margin: 0 auto; padding: 0 1rem; }
+header, .layout, footer { max-width: 48rem; margin: 0 auto; padding: 0 1rem; }
+.has-nav header, .has-nav .layout, .has-nav footer { max-width: 68rem; }
+.has-nav .layout { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 2rem; }
+@media (max-width: 48rem) { .has-nav .layout { display: block; } }
 header { padding-top: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
 header a { color: var(--fg); font-weight: 600; text-decoration: none; }
 main { padding-top: 1rem; padding-bottom: 2rem; }
+.site-nav { padding-top: 2rem; font-size: 0.9375rem; }
+.site-nav ul { list-style: none; margin: 0; padding: 0; }
+.site-nav ul ul { padding-left: 1rem; }
+.site-nav li { margin: 0.2rem 0; }
+.site-nav a { color: var(--fg); text-decoration: none; }
+.site-nav a:hover { color: var(--accent); }
+.site-nav span { color: var(--muted); font-weight: 600; }
+.site-nav [aria-current="page"] { color: var(--accent); font-weight: 600; }
+.pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1rem; border-top: 1px solid var(--border); }
+.pager .next { margin-left: auto; text-align: right; }
 footer { color: var(--muted); font-size: 0.875rem; padding-bottom: 2rem; }
 a { color: var(--accent); }
 h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.5em 0 0.5em; }
@@ -46,10 +60,38 @@ h5:hover .anchor, h6:hover .anchor, .anchor:focus { opacity: 1; }
 .backlinks ul { margin: 0; padding-left: 1.25rem; }
 </style>
 </head>
-<body>
+<body{% if page.nav %} class="has-nav"{% endif %}>
 <header><a href="{{ page.root }}index.html">{{ site.title or "Home" }}</a></header>
+<div class="layout">
+{%- if page.nav %}
+<nav class="site-nav" aria-label="Site">
+<ul>
+{%- for item in page.nav["items"] recursive %}
+<li>
+{%- if item.url %}<a href="{{ item.url | link }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a>
+{%- else %}<span>{{ item.title }}</span>{% endif %}
+{%- if item.children %}
+<ul>{{ loop(item.children) }}
+</ul>
+{%- endif %}</li>
+{%- endfor %}
+</ul>
+</nav>
+{%- endif %}
 <main>
-{{ content }}</main>
+{{ content }}
+{%- if page.nav and (page.nav.prev or page.nav.next) %}
+<nav class="pager" aria-label="Pages">
+{%- if page.nav.prev %}
+<a class="prev" href="{{ page.nav.prev.url | link }}">&larr; {{ page.nav.prev.title }}</a>
+{%- endif %}
+{%- if page.nav.next %}
+<a class="next" href="{{ page.nav.next.url | link }}">{{ page.nav.next.title }} &rarr;</a>
+{%- endif %}
+</nav>
+{%- endif %}
+</main>
+</div>
 <footer>Built with lsdocs</footer>
 </body>
 </html>
