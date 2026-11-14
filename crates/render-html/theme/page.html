@@ -67,6 +67,15 @@ img { max-width: 100%; }
 .anchor { margin-left: 0.25rem; color: var(--muted); text-decoration: none; opacity: 0; }
 h1:hover .anchor, h2:hover .anchor, h3:hover .anchor, h4:hover .anchor,
 h5:hover .anchor, h6:hover .anchor, .anchor:focus { opacity: 1; }
+.admonition { margin: 1rem 0; padding: 0.5rem 1rem; background: var(--soft);
+  border-left: 4px solid var(--accent); border-radius: 6px; }
+.admonition.warning, .admonition.caution, .admonition.important { border-left-color: var(--hl-keyword); }
+.admonition > :last-child { margin-bottom: 0; }
+.admonition-title { margin: 0 0 0.25rem; font-weight: 600; }
+dt { font-weight: 600; }
+dd { margin: 0 0 0.5rem 1.5rem; }
+.footnote { font-size: 0.875rem; color: var(--muted); }
+.footnote-label { margin: 0; }
 .backlinks { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .backlinks p { margin: 0 0 0.25rem; }
 .backlinks ul { margin: 0; padding-left: 1.25rem; }
@@ -80,7 +89,7 @@ h5:hover .anchor, h6:hover .anchor, .anchor:focus { opacity: 1; }
 <ul>
 {%- for item in page.nav["items"] recursive %}
 <li>
-{%- if item.url %}<a href="{{ item.url | link }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a>
+{%- if item.source %}<a href="{{ item.source | page_url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a>
 {%- else %}<span>{{ item.title }}</span>{% endif %}
 {%- if item.children %}
 <ul>{{ loop(item.children) }}
@@ -95,10 +104,10 @@ h5:hover .anchor, h6:hover .anchor, .anchor:focus { opacity: 1; }
 {%- if page.nav and (page.nav.prev or page.nav.next) %}
 <nav class="pager" aria-label="Pages">
 {%- if page.nav.prev %}
-<a class="prev" href="{{ page.nav.prev.url | link }}">&larr; {{ page.nav.prev.title }}</a>
+<a class="prev" href="{{ page.nav.prev.source | page_url }}">&larr; {{ page.nav.prev.title }}</a>
 {%- endif %}
 {%- if page.nav.next %}
-<a class="next" href="{{ page.nav.next.url | link }}">{{ page.nav.next.title }} &rarr;</a>
+<a class="next" href="{{ page.nav.next.source | page_url }}">{{ page.nav.next.title }} &rarr;</a>
 {%- endif %}
 </nav>
 {%- endif %}

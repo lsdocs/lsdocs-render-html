@@ -44,13 +44,13 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use lsdocs_plugin_sdk::doctree::{Align, Document, Node};
+use lsdocs_plugin_sdk::doctree::{Align, Document, Heading, Link, LinkTarget, Node};
 use lsdocs_plugin_sdk::protocol::{
     Diagnostic, OutputFile, RenderParams, RenderResult, RenderSiteParams, RenderSiteResult,
     Severity, SiteInfo,
 };
-use lsdocs_plugin_sdk::{Context, Plugin, PluginError, PluginResult, Renderer};
-use minijinja::{Environment, Value, context};
+use lsdocs_plugin_sdk::{Context, Plugin, PluginError, PluginResult, Renderer, relative_path};
+use minijinja::{Environment, State, Value, context};
 
 /// The built-in page template.
 pub const DEFAULT_TEMPLATE: &str = include_str!("../theme/page.html");
@@ -187,6 +187,16 @@ fn environment(template: Option<&str>, site: &SiteInfo) -> Result<Environment<'s
     env.add_filter("link", |url: String| {
         Value::from_safe_string(escape(&rewrite_link(&url)))
     });
+    // The URL of a document's output, by its source path, relative to the
+    // page being rendered.
+    env.add_filter("page_url", |state: &State, source: String| {
+        let from = state
+            .lookup("page")
+            .and_then(|page| page.get_attr("source").ok())
+            .and_then(|s| s.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        Value::from_safe_string(escape(&relative_path(&from, &output_path(&source))))
+    });
     env.add_template_owned(TEMPLATE_NAME, source)
         .map_err(|e| format!("invalid template: {e}"))?;
     Ok(env)
@@ -265,9 +275,54 @@ fn url_path(path: &str) -> String {
 
 /// Renders the document's nodes, without a page around them.
 pub fn body(doc: &Document, options: &Options) -> String {
+    let page = Page {
+        options,
+        source: &doc.source,
+    };
     let mut out = String::new();
-    children(options, &doc.children, &mut out);
+    children(&page, &doc.children, &mut out);
     out
+}
+
+/// What rendering a node needs besides the node: the options and the
+/// source path of the page it is on.
+struct Page<'a> {
+    options: &'a Options,
+    source: &'a str,
+}
+
+/// Where a document's HTML is written, relative to the output directory:
+/// its source path with the extension replaced by `html`.
+pub fn output_path(source: &str) -> String {
+    match source.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() && !stem.ends_with('/') => format!("{stem}.html"),
+        _ => format!("{source}.html"),
+    }
+}
+
+/// The `href` of a link on the page `from`: built from its target if it has
+/// a resolved one, else its URL (with links to `.md` files rewritten).
+pub fn link_href(from: &str, link: &Link) -> String {
+    match &link.target {
+        Some(LinkTarget {
+            document,
+            anchor,
+            label: None,
+        }) if document.is_some() || anchor.is_some() => {
+            let mut href = match document {
+                Some(document) if document != from || anchor.is_none() => {
+                    relative_path(from, &output_path(document))
+                }
+                _ => String::new(),
+            };
+            if let Some(anchor) = anchor {
+                href.push('#');
+                href.push_str(anchor);
+            }
+            href
+        }
+        _ => rewrite_link(&link.url),
+    }
 }
 
 /// `note` becomes `Note`.
@@ -321,13 +376,13 @@ pub fn rewrite_link(url: &str) -> String {
     url.to_owned()
 }
 
-fn children(opts: &Options, nodes: &[Node], out: &mut String) {
+fn children(opts: &Page<'_>, nodes: &[Node], out: &mut String) {
     for node in nodes {
         render(opts, node, out);
     }
 }
 
-fn wrap(opts: &Options, tag: &str, attrs: &str, nodes: &[Node], out: &mut String, newline: bool) {
+fn wrap(opts: &Page<'_>, tag: &str, attrs: &str, nodes: &[Node], out: &mut String, newline: bool) {
     out.push_str(&format!("<{tag}{attrs}>"));
     children(opts, nodes, out);
     out.push_str(&format!("</{tag}>"));
@@ -349,23 +404,36 @@ fn title_attr(title: &Option<String>) -> String {
         .unwrap_or_default()
 }
 
-fn render(opts: &Options, node: &Node, out: &mut String) {
+/// A heading; `anchor` is the id its `#` link points to (its section's id
+/// for a section title).
+fn heading(opts: &Page<'_>, n: &Heading, anchor: Option<&str>, out: &mut String) {
+    let level = n.level.clamp(1, 6);
+    out.push_str(&format!("<h{level}{}>", id_attr(&n.id)));
+    children(opts, &n.children, out);
+    if opts.options.heading_anchors
+        && let Some(id) = anchor.or(n.id.as_deref())
+    {
+        out.push_str(&format!(
+            " <a class=\"anchor\" href=\"#{}\" aria-label=\"Link to this section\">#</a>",
+            escape(id)
+        ));
+    }
+    out.push_str(&format!("</h{level}>\n"));
+}
+
+fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
     match node {
-        Node::Section(n) => wrap(opts, "section", &id_attr(&n.id), &n.children, out, true),
-        Node::Heading(n) => {
-            let level = n.level.clamp(1, 6);
-            out.push_str(&format!("<h{level}{}>", id_attr(&n.id)));
-            children(opts, &n.children, out);
-            if opts.heading_anchors
-                && let Some(id) = &n.id
-            {
-                out.push_str(&format!(
-                    " <a class=\"anchor\" href=\"#{}\" aria-label=\"Link to this section\">#</a>",
-                    escape(id)
-                ));
+        Node::Section(n) => {
+            out.push_str(&format!("<section{}>\n", id_attr(&n.id)));
+            for (i, child) in n.children.iter().enumerate() {
+                match child {
+                    Node::Heading(h) if i == 0 => heading(opts, h, n.id.as_deref(), out),
+                    child => render(opts, child, out),
+                }
             }
-            out.push_str(&format!("</h{level}>\n"));
+            out.push_str("</section>\n");
         }
+        Node::Heading(n) => heading(opts, n, None, out),
         Node::Paragraph(n) => wrap(opts, "p", "", &n.children, out, true),
         Node::List(n) => {
             let (tag, attrs) = match (n.ordered, n.start) {
@@ -439,7 +507,7 @@ fn render(opts: &Options, node: &Node, out: &mut String) {
         Node::Link(n) => {
             let attrs = format!(
                 " href=\"{}\"{}",
-                escape(&rewrite_link(&n.url)),
+                escape(&link_href(opts.source, n)),
                 title_attr(&n.title)
             );
             wrap(opts, "a", &attrs, &n.children, out, false);
@@ -482,9 +550,10 @@ fn render(opts: &Options, node: &Node, out: &mut String) {
             children(opts, &n.children, out);
             out.push_str("</div>\n");
         }
-        // Delimited for client-side typesetting (KaTeX or MathJax).
+        // Delimited for client-side typesetting (KaTeX or MathJax). A span
+        // even for display math, which may sit inside a paragraph.
         Node::Math(n) if n.display => out.push_str(&format!(
-            "<div class=\"math display\">\\[{}\\]</div>\n",
+            "<span class=\"math display\">\\[{}\\]</span>",
             escape(&n.value)
         )),
         Node::Math(n) => out.push_str(&format!(
@@ -645,8 +714,7 @@ mod tests {
             "</dl>",
             "<p><span id=\"here\"></span><span class=\"math inline\">\\(a&lt;b\\)</span>\
              <sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\">1</a></sup></p>",
-            "<div class=\"math display\">\\[x^2\\]</div>",
-            "<figure id=\"fig\">",
+            "<span class=\"math display\">\\[x^2\\]</span><figure id=\"fig\">",
             "<img src=\"a.png\" alt=\"A\"><figcaption>An A</figcaption>",
             "</figure>",
             "<div class=\"footnote\" id=\"fn-1\">",
@@ -657,6 +725,66 @@ mod tests {
         ]
         .join("\n");
         assert_eq!(body(&doc, &Options::default()), expected);
+    }
+
+    #[test]
+    fn sections_and_link_targets() {
+        use lsdocs_plugin_sdk::doctree::Section;
+        let target = |document: Option<&str>, anchor: Option<&str>| {
+            Some(LinkTarget {
+                document: document.map(Into::into),
+                anchor: anchor.map(Into::into),
+                label: None,
+            })
+        };
+        let link = |url: &str, target: Option<LinkTarget>| Link {
+            url: url.into(),
+            target,
+            ..Link::default()
+        };
+        let from = "guide/a.md";
+        assert_eq!(
+            link_href(from, &link("x", target(Some("ref/b.rst"), Some("s")))),
+            "../ref/b.html#s"
+        );
+        assert_eq!(link_href(from, &link("x", target(None, Some("s")))), "#s");
+        assert_eq!(
+            link_href(from, &link("x", target(Some(from), Some("s")))),
+            "#s"
+        );
+        assert_eq!(
+            link_href(from, &link("x", target(Some(from), None))),
+            "a.html"
+        );
+        // No target, or an unresolved label: the URL, `.md` rewritten.
+        assert_eq!(link_href(from, &link("c.md#t", None)), "c.html#t");
+        let label = Some(LinkTarget {
+            label: Some("l".into()),
+            ..LinkTarget::default()
+        });
+        assert_eq!(link_href(from, &link("c.md", label)), "c.html");
+
+        let mut doc = Document::new(from);
+        doc.children = vec![Node::Section(Section {
+            id: Some("intro".into()),
+            children: vec![
+                Node::Heading(Heading {
+                    level: 1,
+                    children: vec![text("Intro")],
+                    ..Heading::default()
+                }),
+                Node::Paragraph(Paragraph {
+                    children: vec![text("Hi")],
+                    ..Paragraph::default()
+                }),
+            ],
+            ..Section::default()
+        })];
+        assert_eq!(
+            body(&doc, &Options::default()),
+            "<section id=\"intro\">\n<h1>Intro <a class=\"anchor\" href=\"#intro\" \
+             aria-label=\"Link to this section\">#</a></h1>\n<p>Hi</p>\n</section>\n"
+        );
     }
 
     #[test]
