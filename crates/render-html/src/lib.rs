@@ -59,7 +59,31 @@ const TEMPLATE_NAME: &str = "page.html";
 
 /// The plugin, as registered with the host.
 pub fn plugin() -> Plugin {
-    Plugin::new("render-html", env!("CARGO_PKG_VERSION")).renderer(Html::default())
+    Plugin::new("render-html", env!("CARGO_PKG_VERSION"))
+        .renderer(Html::default())
+        .cache_key(cache_key)
+}
+
+/// The cache key: a digest of the custom template, if there is one, since
+/// pages depend on it. If it cannot be read, nothing is cached (rendering
+/// will report the error).
+fn cache_key(init: &lsdocs_plugin_sdk::protocol::InitializeParams) -> Option<String> {
+    let Some(path) = init.options.get("template").and_then(|t| t.as_str()) else {
+        return Some("built-in template".into());
+    };
+    let full = match &init.site.root {
+        Some(root) => Path::new(root).join(path),
+        None => Path::new(path).to_path_buf(),
+    };
+    let text = std::fs::read(full).ok()?;
+    Some(format!("template {:016x}", fnv1a(&text)))
+}
+
+/// The 64-bit FNV-1a hash: small, and the same in every build.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &b| {
+        (hash ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 /// The HTML renderer. The template is loaded on first use, since its path
@@ -894,6 +918,32 @@ mod tests {
             )
             .unwrap();
         assert_eq!(out, "a/b.html#x https://x.org/y.md?a&amp;b");
+    }
+
+    #[test]
+    fn cache_key_follows_the_template() {
+        use lsdocs_plugin_sdk::protocol::InitializeParams;
+        let dir = std::env::temp_dir().join(format!("lsdocs-render-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let init = |options: serde_json::Value| InitializeParams {
+            site: SiteInfo {
+                root: Some(dir.to_string_lossy().into_owned()),
+                ..SiteInfo::default()
+            },
+            options,
+            ..InitializeParams::default()
+        };
+        let custom = init(serde_json::json!({"template": "t.html"}));
+        assert_eq!(cache_key(&custom), None, "unreadable: no caching");
+        std::fs::write(dir.join("t.html"), "a").unwrap();
+        let first = cache_key(&custom).unwrap();
+        std::fs::write(dir.join("t.html"), "b").unwrap();
+        assert_ne!(cache_key(&custom).unwrap(), first);
+        assert_eq!(
+            cache_key(&init(serde_json::Value::Null)).as_deref(),
+            Some("built-in template")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
