@@ -270,6 +270,15 @@ pub fn body(doc: &Document, options: &Options) -> String {
     out
 }
 
+/// `note` becomes `Note`.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 /// Escapes text for HTML content and attribute values.
 pub fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -442,6 +451,53 @@ fn render(opts: &Options, node: &Node, out: &mut String) {
             title_attr(&n.title)
         )),
         Node::LineBreak(_) => out.push_str("<br>\n"),
+        Node::Admonition(n) => {
+            let title = n.title.clone().unwrap_or_else(|| capitalize(&n.kind));
+            out.push_str(&format!(
+                "<aside class=\"admonition {}\">\n<p class=\"admonition-title\">{}</p>\n",
+                escape(&n.kind),
+                escape(&title)
+            ));
+            children(opts, &n.children, out);
+            out.push_str("</aside>\n");
+        }
+        Node::DefinitionList(n) => {
+            out.push_str("<dl>\n");
+            children(opts, &n.children, out);
+            out.push_str("</dl>\n");
+        }
+        Node::DefinitionTerm(n) => wrap(opts, "dt", "", &n.children, out, true),
+        Node::DefinitionDescription(n) => wrap(opts, "dd", "", &n.children, out, true),
+        Node::FootnoteReference(n) => {
+            let label = escape(&n.label);
+            out.push_str(&format!(
+                "<sup class=\"footnote-ref\"><a href=\"#fn-{label}\" id=\"fnref-{label}\">{label}</a></sup>"
+            ));
+        }
+        Node::FootnoteDefinition(n) => {
+            let label = escape(&n.label);
+            out.push_str(&format!(
+                "<div class=\"footnote\" id=\"fn-{label}\">\n<p class=\"footnote-label\"><a href=\"#fnref-{label}\">{label}</a></p>\n"
+            ));
+            children(opts, &n.children, out);
+            out.push_str("</div>\n");
+        }
+        // Delimited for client-side typesetting (KaTeX or MathJax).
+        Node::Math(n) if n.display => out.push_str(&format!(
+            "<div class=\"math display\">\\[{}\\]</div>\n",
+            escape(&n.value)
+        )),
+        Node::Math(n) => out.push_str(&format!(
+            "<span class=\"math inline\">\\({}\\)</span>",
+            escape(&n.value)
+        )),
+        Node::Figure(n) => {
+            out.push_str(&format!("<figure{}>\n", id_attr(&n.id)));
+            children(opts, &n.children, out);
+            out.push_str("</figure>\n");
+        }
+        Node::Caption(n) => wrap(opts, "figcaption", "", &n.children, out, true),
+        Node::Anchor(n) => out.push_str(&format!("<span id=\"{}\"></span>", escape(&n.id))),
         // Highlighted code from `transform-highlight`: its HTML as is.
         Node::Custom(n)
             if n.kind == "highlight" && n.attrs.get("html").is_some_and(|h| h.is_string()) =>
@@ -503,6 +559,104 @@ mod tests {
             "{html}"
         );
         assert!(html.contains("<a href=\"index.html\">Site</a>"), "{html}");
+    }
+
+    #[test]
+    fn renders_the_shared_block_kinds() {
+        use lsdocs_plugin_sdk::doctree::{
+            Admonition, Anchor, Caption, DefinitionDescription, DefinitionList, DefinitionTerm,
+            Figure, FootnoteDefinition, FootnoteReference, Image, Math,
+        };
+        let para = |nodes: Vec<Node>| {
+            Node::Paragraph(Paragraph {
+                children: nodes,
+                ..Paragraph::default()
+            })
+        };
+        let mut doc = Document::new("a.md");
+        doc.children = vec![
+            Node::Admonition(Admonition {
+                kind: "warning".into(),
+                children: vec![para(vec![text("Careful")])],
+                ..Admonition::default()
+            }),
+            Node::DefinitionList(DefinitionList {
+                children: vec![
+                    Node::DefinitionTerm(DefinitionTerm {
+                        children: vec![text("Term")],
+                        ..DefinitionTerm::default()
+                    }),
+                    Node::DefinitionDescription(DefinitionDescription {
+                        children: vec![para(vec![text("Meaning")])],
+                        ..DefinitionDescription::default()
+                    }),
+                ],
+                ..DefinitionList::default()
+            }),
+            para(vec![
+                Node::Anchor(Anchor {
+                    id: "here".into(),
+                    ..Anchor::default()
+                }),
+                Node::Math(Math {
+                    value: "a<b".into(),
+                    ..Math::default()
+                }),
+                Node::FootnoteReference(FootnoteReference {
+                    label: "1".into(),
+                    ..FootnoteReference::default()
+                }),
+            ]),
+            Node::Math(Math {
+                value: "x^2".into(),
+                display: true,
+                ..Math::default()
+            }),
+            Node::Figure(Figure {
+                id: Some("fig".into()),
+                children: vec![
+                    Node::Image(Image {
+                        url: "a.png".into(),
+                        alt: "A".into(),
+                        ..Image::default()
+                    }),
+                    Node::Caption(Caption {
+                        children: vec![text("An A")],
+                        ..Caption::default()
+                    }),
+                ],
+                ..Figure::default()
+            }),
+            Node::FootnoteDefinition(FootnoteDefinition {
+                label: "1".into(),
+                children: vec![para(vec![text("Note.")])],
+                ..FootnoteDefinition::default()
+            }),
+        ];
+        let expected = [
+            "<aside class=\"admonition warning\">",
+            "<p class=\"admonition-title\">Warning</p>",
+            "<p>Careful</p>",
+            "</aside>",
+            "<dl>",
+            "<dt>Term</dt>",
+            "<dd><p>Meaning</p>",
+            "</dd>",
+            "</dl>",
+            "<p><span id=\"here\"></span><span class=\"math inline\">\\(a&lt;b\\)</span>\
+             <sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\">1</a></sup></p>",
+            "<div class=\"math display\">\\[x^2\\]</div>",
+            "<figure id=\"fig\">",
+            "<img src=\"a.png\" alt=\"A\"><figcaption>An A</figcaption>",
+            "</figure>",
+            "<div class=\"footnote\" id=\"fn-1\">",
+            "<p class=\"footnote-label\"><a href=\"#fnref-1\">1</a></p>",
+            "<p>Note.</p>",
+            "</div>",
+            "",
+        ]
+        .join("\n");
+        assert_eq!(body(&doc, &Options::default()), expected);
     }
 
     #[test]
