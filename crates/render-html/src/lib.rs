@@ -252,9 +252,9 @@ pub fn render_page(
 }
 
 /// Renders a page with the built-in template and default options.
-pub fn page(doc: &Document, site: &SiteInfo) -> String {
-    let env = environment(None, site).expect("the built-in template is valid");
-    render_page(&env, doc, site, &Options::default()).expect("the built-in template renders")
+pub fn page(doc: &Document, site: &SiteInfo) -> Result<String, String> {
+    let env = environment(None, site)?;
+    render_page(&env, doc, site, &Options::default()).map_err(|e| e.to_string())
 }
 
 /// A sitemap (sitemaps.org protocol) of the rendered pages, with URLs under
@@ -606,6 +606,7 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use lsdocs_plugin_sdk::doctree::{Heading, Link, Paragraph, text};
 
@@ -642,7 +643,7 @@ mod tests {
 
     #[test]
     fn renders_a_page_and_escapes() {
-        let html = page(&doc("a.md"), &site());
+        let html = page(&doc("a.md"), &site()).unwrap();
         assert!(
             html.contains("<title>Tom &amp; Jerry | Site</title>"),
             "{html}"
@@ -850,7 +851,7 @@ mod tests {
 
     #[test]
     fn nested_pages_link_home_relatively() {
-        let html = page(&doc("guide/deep/a.md"), &site());
+        let html = page(&doc("guide/deep/a.md"), &site()).unwrap();
         assert!(
             html.contains("<a href=\"../../index.html\">Site</a>"),
             "{html}"
