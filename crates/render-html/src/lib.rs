@@ -25,8 +25,10 @@
 //!
 //! `custom:highlight` nodes from `transform-highlight` are written as the
 //! highlighted HTML they carry; the default theme colors their tokens.
-//! Other `custom` nodes are a `div` with their kind as its class (and
-//! their `id` attribute as its id) around their children, or, with the
+//! Other `custom` nodes are a `div` (or the block element their
+//! `html_tag` names: `p`, `h1` to `h6`, `section`, `aside`, `nav`) with
+//! their kind as its class (and their `id` attribute as its id) around
+//! their children, or, with the
 //! attribute `inline: true`, a `span` (or the element their `html_tag`
 //! names, among `abbr`, `code`, `kbd` and other inline elements) with
 //! their `title` attribute as its title.
@@ -61,6 +63,11 @@ use minijinja::{Environment, State, Value, context};
 pub const DEFAULT_TEMPLATE: &str = include_str!("../theme/page.html");
 
 const TEMPLATE_NAME: &str = "page.html";
+
+/// Elements a block `custom` node may ask for with `html_tag`.
+const BLOCK_TAGS: &[&str] = &[
+    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "section", "aside", "nav",
+];
 
 /// Elements an inline `custom` node may ask for with `html_tag`.
 const INLINE_TAGS: &[&str] = &[
@@ -623,11 +630,17 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
             wrap(opts, tag, &attrs, &n.children, out, false);
         }
         Node::Custom(n) => {
+            let tag = n
+                .attrs
+                .get("html_tag")
+                .and_then(serde_json::Value::as_str)
+                .filter(|t| BLOCK_TAGS.contains(t))
+                .unwrap_or("div");
             let mut attrs = format!(" class=\"{}\"", escape(&n.kind));
             if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
                 attrs.push_str(&format!(" id=\"{}\"", escape(id)));
             }
-            wrap(opts, "div", &attrs, &n.children, out, true);
+            wrap(opts, tag, &attrs, &n.children, out, true);
         }
     }
 }
