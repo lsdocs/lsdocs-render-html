@@ -25,6 +25,11 @@
 //!
 //! `custom:highlight` nodes from `transform-highlight` are written as the
 //! highlighted HTML they carry; the default theme colors their tokens.
+//! Other `custom` nodes are a `div` with their kind as its class (and
+//! their `id` attribute as its id) around their children, or, with the
+//! attribute `inline: true`, a `span` (or the element their `html_tag`
+//! names, among `abbr`, `code`, `kbd` and other inline elements) with
+//! their `title` attribute as its title.
 //!
 //! Relative links to other Markdown pages (`guide.md#setup`) are rewritten
 //! to their HTML output (`guide.html#setup`), in the body and through the
@@ -56,6 +61,12 @@ use minijinja::{Environment, State, Value, context};
 pub const DEFAULT_TEMPLATE: &str = include_str!("../theme/page.html");
 
 const TEMPLATE_NAME: &str = "page.html";
+
+/// Elements an inline `custom` node may ask for with `html_tag`.
+const INLINE_TAGS: &[&str] = &[
+    "span", "abbr", "cite", "code", "dfn", "em", "kbd", "mark", "q", "samp", "small", "strong",
+    "sub", "sup", "var",
+];
 
 /// The plugin, as registered with the host.
 pub fn plugin() -> Plugin {
@@ -597,8 +608,25 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
         {
             out.push_str(n.attrs["html"].as_str().unwrap_or_default());
         }
+        // An inline custom node: a span, or one of a few inline elements.
+        Node::Custom(n) if n.attrs.get("inline") == Some(&serde_json::Value::Bool(true)) => {
+            let tag = n
+                .attrs
+                .get("html_tag")
+                .and_then(serde_json::Value::as_str)
+                .filter(|t| INLINE_TAGS.contains(t))
+                .unwrap_or("span");
+            let mut attrs = format!(" class=\"{}\"", escape(&n.kind));
+            if let Some(title) = n.attrs.get("title").and_then(serde_json::Value::as_str) {
+                attrs.push_str(&format!(" title=\"{}\"", escape(title)));
+            }
+            wrap(opts, tag, &attrs, &n.children, out, false);
+        }
         Node::Custom(n) => {
-            let attrs = format!(" class=\"{}\"", escape(&n.kind));
+            let mut attrs = format!(" class=\"{}\"", escape(&n.kind));
+            if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
+                attrs.push_str(&format!(" id=\"{}\"", escape(id)));
+            }
             wrap(opts, "div", &attrs, &n.children, out, true);
         }
     }
