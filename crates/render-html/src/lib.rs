@@ -86,7 +86,11 @@ pub fn plugin() -> Plugin {
         .settings(|c| {
             lsdocs_plugin_sdk::config::settings_toml_keys(
                 c,
-                &["template", "heading_anchors", "sitemap"],
+                &[
+                    ("template", lsdocs_plugin_sdk::config::Kind::String),
+                    ("heading_anchors", lsdocs_plugin_sdk::config::Kind::Bool),
+                    ("sitemap", lsdocs_plugin_sdk::config::Kind::Bool),
+                ],
             )
         })
         .renderer(Html::default())
@@ -117,7 +121,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 }
 
 /// The HTML renderer. The template is loaded on first use, since its path
-/// comes from the plugin's options.
+/// comes from the plugin's settings.
 #[derive(Debug, Default)]
 pub struct Html {
     env: OnceLock<Result<Environment<'static>, String>>,
@@ -209,7 +213,7 @@ impl Default for Options {
 }
 
 impl Options {
-    /// Reads the options from the plugin's `options` value; missing or
+    /// Reads the options from the plugin's settings; missing or
     /// mistyped ones keep their defaults.
     pub fn from_value(value: &lsdocs_plugin_sdk::doctree::Value) -> Self {
         let defaults = Self::default();
