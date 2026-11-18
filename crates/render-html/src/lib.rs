@@ -38,7 +38,7 @@
 //! `link` filter in templates (`{{ item.url | link }}`).
 //!
 //! After every page is rendered, the plugin writes `sitemap.xml` (via the
-//! `render/site` request) if the site has an absolute `base_url`. Pages
+//! `render/transform/all` request) if the site has an absolute `base_url`. Pages
 //! whose front matter says `sitemap: false` are left out.
 //!
 //! Other options:
@@ -53,8 +53,8 @@ use std::sync::OnceLock;
 
 use lsdocs_plugin_sdk::doctree::{Align, Document, Heading, Link, LinkTarget, Node};
 use lsdocs_plugin_sdk::protocol::{
-    Diagnostic, OutputFile, RenderParams, RenderResult, RenderSiteParams, RenderSiteResult,
-    Severity, SiteInfo,
+    Diagnostic, OutputFile, RenderParams, RenderResult, RenderTransformAllParams,
+    RenderTransformAllResult, Severity, SiteInfo,
 };
 use lsdocs_plugin_sdk::{Context, Plugin, PluginError, PluginResult, Renderer, relative_path};
 use minijinja::{Environment, State, Value, context};
@@ -112,20 +112,20 @@ pub struct Html {
 }
 
 impl Renderer for Html {
-    const SITE: bool = true;
+    const RENDERS_ALL: bool = true;
 
     fn formats(&self) -> Vec<String> {
         vec!["html".into()]
     }
 
-    async fn render_site(
+    async fn render_all(
         &self,
-        params: RenderSiteParams,
+        params: RenderTransformAllParams,
         ctx: &Context,
-    ) -> PluginResult<RenderSiteResult> {
+    ) -> PluginResult<RenderTransformAllResult> {
         let wanted = ctx.options().get("sitemap").and_then(|v| v.as_bool());
         if wanted == Some(false) {
-            return Ok(RenderSiteResult::default());
+            return Ok(RenderTransformAllResult::default());
         }
         let base = ctx
             .site()
@@ -133,7 +133,7 @@ impl Renderer for Html {
             .as_deref()
             .filter(|url| url.starts_with("https://") || url.starts_with("http://"));
         let Some(base) = base else {
-            let mut result = RenderSiteResult::default();
+            let mut result = RenderTransformAllResult::default();
             if wanted == Some(true) {
                 result.diagnostics.push(Diagnostic {
                     severity: Severity::Warning,
@@ -146,7 +146,7 @@ impl Renderer for Html {
             }
             return Ok(result);
         };
-        Ok(RenderSiteResult {
+        Ok(RenderTransformAllResult {
             files: vec![OutputFile {
                 path: "sitemap.xml".into(),
                 output: sitemap(base, &params).into_bytes(),
@@ -277,7 +277,7 @@ pub fn page(doc: &Document, site: &SiteInfo) -> Result<String, String> {
 
 /// A sitemap (sitemaps.org protocol) of the rendered pages, with URLs under
 /// `base`. `index.html` pages are listed by their directory URL.
-pub fn sitemap(base: &str, params: &RenderSiteParams) -> String {
+pub fn sitemap(base: &str, params: &RenderTransformAllParams) -> String {
     let base = base.trim_end_matches('/');
     let mut out = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -928,7 +928,7 @@ mod tests {
             path: path.into(),
             metadata: serde_json::from_value(metadata).unwrap(),
         };
-        let params = RenderSiteParams {
+        let params = RenderTransformAllParams {
             format: "html".into(),
             pages: vec![
                 page("guide/index.html", serde_json::json!({})),
