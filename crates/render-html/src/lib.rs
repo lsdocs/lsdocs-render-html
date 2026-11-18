@@ -8,7 +8,12 @@
 //! [[plugins]]
 //! name = "html"
 //! builtin = "render-html"
-//! options = { template = "theme/page.html" }
+//! ```
+//!
+//! with its settings in `.config/lsdocs/html/settings.toml`:
+//!
+//! ```toml
+//! template = "theme/page.html"
 //! ```
 //!
 //! Templates see:
@@ -41,7 +46,7 @@
 //! `render/transform/all` request) if the site has an absolute `base_url`. Pages
 //! whose front matter says `sitemap: false` are left out.
 //!
-//! Other options:
+//! Other settings:
 //!
 //! | Option | Default | Meaning |
 //! |---|---|---|
