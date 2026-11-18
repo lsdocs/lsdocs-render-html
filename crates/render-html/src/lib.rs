@@ -78,6 +78,12 @@ const INLINE_TAGS: &[&str] = &[
 /// The plugin, as registered with the host.
 pub fn plugin() -> Plugin {
     Plugin::new("render-html", env!("CARGO_PKG_VERSION"))
+        .settings(|c| {
+            lsdocs_plugin_sdk::config::settings_toml_keys(
+                c,
+                &["template", "heading_anchors", "sitemap"],
+            )
+        })
         .renderer(Html::default())
         .cache_key(cache_key)
 }
@@ -85,8 +91,9 @@ pub fn plugin() -> Plugin {
 /// The cache key: a digest of the custom template, if there is one, since
 /// pages depend on it. If it cannot be read, nothing is cached (rendering
 /// will report the error).
-fn cache_key(init: &lsdocs_plugin_sdk::protocol::InitializeParams) -> Option<String> {
-    let Some(path) = init.options.get("template").and_then(|t| t.as_str()) else {
+fn cache_key(setup: &lsdocs_plugin_sdk::Setup) -> Option<String> {
+    let init = &setup.params;
+    let Some(path) = setup.settings.get("template").and_then(|t| t.as_str()) else {
         return Some("built-in template".into());
     };
     let full = match &init.site.root {
@@ -123,7 +130,7 @@ impl Renderer for Html {
         params: RenderTransformAllParams,
         ctx: &Context,
     ) -> PluginResult<RenderTransformAllResult> {
-        let wanted = ctx.options().get("sitemap").and_then(|v| v.as_bool());
+        let wanted = ctx.settings().get("sitemap").and_then(|v| v.as_bool());
         if wanted == Some(false) {
             return Ok(RenderTransformAllResult::default());
         }
@@ -166,13 +173,13 @@ impl Renderer for Html {
             .env
             .get_or_init(|| {
                 environment(
-                    ctx.options().get("template").and_then(|t| t.as_str()),
+                    ctx.settings().get("template").and_then(|t| t.as_str()),
                     ctx.site(),
                 )
             })
             .as_ref()
             .map_err(|e| PluginError::new(e.clone()))?;
-        let options = Options::from_value(ctx.options());
+        let options = Options::from_value(ctx.settings());
         Ok(RenderResult {
             output: render_page(env, &params.document, ctx.site(), &options)?.into_bytes(),
             extension: "html".into(),
@@ -181,7 +188,7 @@ impl Renderer for Html {
     }
 }
 
-/// Rendering options, from the plugin's `options`.
+/// Rendering options, from the plugin's settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     /// Add a `#` link to each heading that has an id.
@@ -967,13 +974,17 @@ mod tests {
         use lsdocs_plugin_sdk::protocol::InitializeParams;
         let dir = std::env::temp_dir().join(format!("lsdocs-render-key-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let init = |options: serde_json::Value| InitializeParams {
-            site: SiteInfo {
-                root: Some(dir.to_string_lossy().into_owned()),
-                ..SiteInfo::default()
-            },
-            options,
-            ..InitializeParams::default()
+        let init = |options: serde_json::Value| {
+            lsdocs_plugin_sdk::Setup::with_settings(
+                InitializeParams {
+                    site: SiteInfo {
+                        root: Some(dir.to_string_lossy().into_owned()),
+                        ..SiteInfo::default()
+                    },
+                    ..InitializeParams::default()
+                },
+                options,
+            )
         };
         let custom = init(serde_json::json!({"template": "t.html"}));
         assert_eq!(cache_key(&custom), None, "unreadable: no caching");
