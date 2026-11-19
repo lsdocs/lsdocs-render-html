@@ -47,7 +47,13 @@ a { color: var(--accent); }
 h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.5em 0 0.5em; }
 code, pre { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-size: 0.875em; }
 code { background: var(--soft); padding: 0.1em 0.3em; border-radius: 4px; }
-pre { background: var(--soft); padding: 1rem; overflow-x: auto; border-radius: 6px; }
+pre { background: var(--soft); padding: 1rem; overflow-x: auto; border-radius: 6px; margin: 0; }
+.lsd-code { margin: 1rem 0; }
+.lsd-code figcaption { color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }
+.lsd-table { overflow-x: auto; margin: 1rem 0; }
+.lsd-tab + .lsd-tab { margin-top: 1rem; }
+.lsd-tab::before { content: attr(data-label); display: block; font-weight: 600; color: var(--muted); }
+lsd-tabs:defined .lsd-tab::before { display: none; }
 pre code { background: none; padding: 0; }
 blockquote { margin: 0; padding: 0 1rem; color: var(--muted); border-left: 4px solid var(--border); }
 table { border-collapse: collapse; }
@@ -61,24 +67,25 @@ img { max-width: 100%; }
 .hl-entity.hl-name.hl-tag { color: var(--hl-tag); }
 .hl-variable.hl-parameter { color: var(--hl-param); }
 .hl-markup.hl-heading { color: var(--hl-constant); font-weight: 600; }
-.toc { background: var(--soft); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 1rem; }
-.toc ul { margin: 0; padding-left: 1.25rem; }
-.toc p { margin: 0; }
-.anchor { margin-left: 0.25rem; color: var(--muted); text-decoration: none; opacity: 0; }
-h1:hover .anchor, h2:hover .anchor, h3:hover .anchor, h4:hover .anchor,
-h5:hover .anchor, h6:hover .anchor, .anchor:focus { opacity: 1; }
-.admonition { margin: 1rem 0; padding: 0.5rem 1rem; background: var(--soft);
+.lsd-toc { background: var(--soft); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 1rem; }
+.lsd-toc ul { margin: 0; padding-left: 1.25rem; }
+.lsd-toc p { margin: 0; }
+.lsd-anchor { margin-left: 0.25rem; color: var(--muted); text-decoration: none; opacity: 0; }
+h1:hover .lsd-anchor, h2:hover .lsd-anchor, h3:hover .lsd-anchor, h4:hover .lsd-anchor,
+h5:hover .lsd-anchor, h6:hover .lsd-anchor, .lsd-anchor:focus { opacity: 1; }
+.lsd-admonition { margin: 1rem 0; padding: 0.5rem 1rem; background: var(--soft);
   border-left: 4px solid var(--accent); border-radius: 6px; }
-.admonition.warning, .admonition.caution, .admonition.important { border-left-color: var(--hl-keyword); }
-.admonition > :last-child { margin-bottom: 0; }
-.admonition-title { margin: 0 0 0.25rem; font-weight: 600; }
+.lsd-admonition[data-kind="warning"], .lsd-admonition[data-kind="caution"],
+.lsd-admonition[data-kind="important"] { border-left-color: var(--hl-keyword); }
+.lsd-admonition > :last-child { margin-bottom: 0; }
+.lsd-admonition-title { margin: 0 0 0.25rem; font-weight: 600; }
 dt { font-weight: 600; }
 dd { margin: 0 0 0.5rem 1.5rem; }
-.footnote { font-size: 0.875rem; color: var(--muted); }
-.footnote-label { margin: 0; }
-.backlinks { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
-.backlinks p { margin: 0 0 0.25rem; }
-.backlinks ul { margin: 0; padding-left: 1.25rem; }
+.lsd-footnote { font-size: 0.875rem; color: var(--muted); }
+.lsd-footnote-label { margin: 0; }
+.lsd-backlinks { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.lsd-backlinks p { margin: 0 0 0.25rem; }
+.lsd-backlinks ul { margin: 0; padding-left: 1.25rem; }
 </style>
 </head>
 <body{% if page.nav %} class="has-nav"{% endif %}>

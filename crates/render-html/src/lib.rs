@@ -28,15 +28,18 @@
 //! | `page.nav` | Site navigation from `transform-nav`, if it ran (`items`, `prev`, `next`). |
 //! | `site.title`, `site.base_url` | From the site config. |
 //!
+//! The body's markup is a contract with themes: classes and data
+//! attributes prefixed `lsd-`, listed in `docs/content/reference/html-markup.md`.
 //! `custom:highlight` nodes from `transform-highlight` are written as the
-//! highlighted HTML they carry; the default theme colors their tokens.
-//! Other `custom` nodes are a `div` (or the block element their
-//! `html_tag` names: `p`, `h1` to `h6`, `section`, `aside`, `nav`) with
-//! their kind as its class (and their `id` attribute as its id) around
-//! their children, or, with the
-//! attribute `inline: true`, a `span` (or the element their `html_tag`
-//! names, among `abbr`, `code`, `kbd` and other inline elements) with
-//! their `title` attribute as its title.
+//! highlighted HTML they carry, in an `lsd-code` figure; the default theme
+//! colors their tokens. Other `custom` nodes are a `div` (or the block
+//! element their `html_tag` names: `p`, `h1` to `h6`, `section`, `aside`,
+//! `nav`) with their kind, prefixed `lsd-`, as its class (and their `id`
+//! attribute as its id) around their children, or, with the attribute
+//! `inline: true`, a `span` (or the element their `html_tag` names, among
+//! `abbr`, `code`, `kbd` and other inline elements) with their `title`
+//! attribute as its title. `custom:tab-set` and `custom:tab-item` (from
+//! `sphinx-addons`) are an `<lsd-tabs>` element of labelled `lsd-tab`s.
 //!
 //! Relative links to other Markdown pages (`guide.md#setup`) are rewritten
 //! to their HTML output (`guide.html#setup`), in the body and through the
@@ -56,7 +59,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use lsdocs_plugin_sdk::doctree::{Align, Document, Heading, Link, LinkTarget, Node};
+use lsdocs_plugin_sdk::doctree::Document;
 use lsdocs_plugin_sdk::protocol::{
     Diagnostic, OutputFile, RenderParams, RenderResult, RenderTransformAllParams,
     RenderTransformAllResult, Severity, SiteInfo,
@@ -64,21 +67,14 @@ use lsdocs_plugin_sdk::protocol::{
 use lsdocs_plugin_sdk::{Context, Plugin, PluginError, PluginResult, Renderer, relative_path};
 use minijinja::{Environment, State, Value, context};
 
+mod body;
+
+pub use body::{body, escape, link_href, output_path, rewrite_link};
+
 /// The built-in page template.
 pub const DEFAULT_TEMPLATE: &str = include_str!("../theme/page.html");
 
 const TEMPLATE_NAME: &str = "page.html";
-
-/// Elements a block `custom` node may ask for with `html_tag`.
-const BLOCK_TAGS: &[&str] = &[
-    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "section", "aside", "nav",
-];
-
-/// Elements an inline `custom` node may ask for with `html_tag`.
-const INLINE_TAGS: &[&str] = &[
-    "span", "abbr", "cite", "code", "dfn", "em", "kbd", "mark", "q", "samp", "small", "strong",
-    "sub", "sup", "var",
-];
 
 /// The plugin, as registered with the host.
 pub fn plugin() -> Plugin {
@@ -331,341 +327,11 @@ fn url_path(path: &str) -> String {
     out
 }
 
-/// Renders the document's nodes, without a page around them.
-pub fn body(doc: &Document, options: &Options) -> String {
-    let page = Page {
-        options,
-        source: &doc.source,
-    };
-    let mut out = String::new();
-    children(&page, &doc.children, &mut out);
-    out
-}
-
-/// What rendering a node needs besides the node: the options and the
-/// source path of the page it is on.
-struct Page<'a> {
-    options: &'a Options,
-    source: &'a str,
-}
-
-/// Where a document's HTML is written, relative to the output directory:
-/// its source path with the extension replaced by `html`.
-pub fn output_path(source: &str) -> String {
-    match source.rsplit_once('.') {
-        Some((stem, _)) if !stem.is_empty() && !stem.ends_with('/') => format!("{stem}.html"),
-        _ => format!("{source}.html"),
-    }
-}
-
-/// The `href` of a link on the page `from`: built from its target if it has
-/// a resolved one, else its URL (with links to `.md` files rewritten).
-pub fn link_href(from: &str, link: &Link) -> String {
-    match &link.target {
-        Some(LinkTarget {
-            document,
-            anchor,
-            label: None,
-        }) if document.is_some() || anchor.is_some() => {
-            let mut href = match document {
-                Some(document) if document != from || anchor.is_none() => {
-                    relative_path(from, &output_path(document))
-                }
-                _ => String::new(),
-            };
-            if let Some(anchor) = anchor {
-                href.push('#');
-                href.push_str(anchor);
-            }
-            href
-        }
-        _ => rewrite_link(&link.url),
-    }
-}
-
-/// `note` becomes `Note`.
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
-/// Escapes text for HTML content and attribute values.
-pub fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// Rewrites a relative link to a Markdown page so it points at the page's
-/// HTML output. Absolute URLs, fragments and other files are unchanged.
-pub fn rewrite_link(url: &str) -> String {
-    let is_external = url.starts_with("//")
-        || url.starts_with('#')
-        || url.split_once(':').is_some_and(|(scheme, _)| {
-            !scheme.is_empty()
-                && scheme
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
-        });
-    if is_external {
-        return url.to_owned();
-    }
-    let split = url.find(['#', '?']).unwrap_or(url.len());
-    let (path, rest) = url.split_at(split);
-    for ext in [".md", ".markdown"] {
-        if let Some(stem) = path.strip_suffix(ext)
-            && !stem.is_empty()
-        {
-            return format!("{stem}.html{rest}");
-        }
-    }
-    url.to_owned()
-}
-
-fn children(opts: &Page<'_>, nodes: &[Node], out: &mut String) {
-    for node in nodes {
-        render(opts, node, out);
-    }
-}
-
-fn wrap(opts: &Page<'_>, tag: &str, attrs: &str, nodes: &[Node], out: &mut String, newline: bool) {
-    out.push_str(&format!("<{tag}{attrs}>"));
-    children(opts, nodes, out);
-    out.push_str(&format!("</{tag}>"));
-    if newline {
-        out.push('\n');
-    }
-}
-
-fn id_attr(id: &Option<String>) -> String {
-    id.as_ref()
-        .map(|id| format!(" id=\"{}\"", escape(id)))
-        .unwrap_or_default()
-}
-
-fn title_attr(title: &Option<String>) -> String {
-    title
-        .as_ref()
-        .map(|t| format!(" title=\"{}\"", escape(t)))
-        .unwrap_or_default()
-}
-
-/// A heading; `anchor` is the id its `#` link points to (its section's id
-/// for a section title).
-fn heading(opts: &Page<'_>, n: &Heading, anchor: Option<&str>, out: &mut String) {
-    let level = n.level.clamp(1, 6);
-    out.push_str(&format!("<h{level}{}>", id_attr(&n.id)));
-    children(opts, &n.children, out);
-    if opts.options.heading_anchors
-        && let Some(id) = anchor.or(n.id.as_deref())
-    {
-        out.push_str(&format!(
-            " <a class=\"anchor\" href=\"#{}\" aria-label=\"Link to this section\">#</a>",
-            escape(id)
-        ));
-    }
-    out.push_str(&format!("</h{level}>\n"));
-}
-
-fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
-    match node {
-        Node::Section(n) => {
-            out.push_str(&format!("<section{}>\n", id_attr(&n.id)));
-            for (i, child) in n.children.iter().enumerate() {
-                match child {
-                    Node::Heading(h) if i == 0 => heading(opts, h, n.id.as_deref(), out),
-                    child => render(opts, child, out),
-                }
-            }
-            out.push_str("</section>\n");
-        }
-        Node::Heading(n) => heading(opts, n, None, out),
-        Node::Paragraph(n) => wrap(opts, "p", "", &n.children, out, true),
-        Node::List(n) => {
-            let (tag, attrs) = match (n.ordered, n.start) {
-                (true, Some(start)) => ("ol", format!(" start=\"{start}\"")),
-                (true, None) => ("ol", String::new()),
-                (false, _) => ("ul", String::new()),
-            };
-            out.push_str(&format!("<{tag}{attrs}>\n"));
-            children(opts, &n.children, out);
-            out.push_str(&format!("</{tag}>\n"));
-        }
-        Node::ListItem(n) => {
-            out.push_str("<li>");
-            if let Some(checked) = n.checked {
-                let mark = if checked { " checked" } else { "" };
-                out.push_str(&format!("<input type=\"checkbox\" disabled{mark}> "));
-            }
-            children(opts, &n.children, out);
-            out.push_str("</li>\n");
-        }
-        Node::BlockQuote(n) => {
-            out.push_str("<blockquote>\n");
-            children(opts, &n.children, out);
-            out.push_str("</blockquote>\n");
-        }
-        Node::CodeBlock(n) => {
-            let class = n
-                .language
-                .as_ref()
-                .map(|l| format!(" class=\"language-{}\"", escape(l)))
-                .unwrap_or_default();
-            out.push_str(&format!(
-                "<pre><code{class}>{}</code></pre>\n",
-                escape(&n.value)
-            ));
-        }
-        Node::Table(n) => {
-            out.push_str("<table>\n");
-            for row in &n.children {
-                let Node::TableRow(row) = row else {
-                    render(opts, row, out);
-                    continue;
-                };
-                let cell_tag = if row.header { "th" } else { "td" };
-                out.push_str("<tr>");
-                for (i, cell) in row.children.iter().enumerate() {
-                    let style = match n.align.get(i) {
-                        Some(Align::Left) => " style=\"text-align: left\"",
-                        Some(Align::Center) => " style=\"text-align: center\"",
-                        Some(Align::Right) => " style=\"text-align: right\"",
-                        _ => "",
-                    };
-                    wrap(opts, cell_tag, style, cell.children(), out, false);
-                }
-                out.push_str("</tr>\n");
-            }
-            out.push_str("</table>\n");
-        }
-        Node::TableRow(n) => wrap(opts, "tr", "", &n.children, out, true),
-        Node::TableCell(n) => wrap(opts, "td", "", &n.children, out, false),
-        Node::ThematicBreak(_) => out.push_str("<hr>\n"),
-        Node::Raw(n) => {
-            if n.format == "html" {
-                out.push_str(&n.value);
-            }
-        }
-        Node::Text(n) => out.push_str(&escape(&n.value)),
-        Node::Emphasis(n) => wrap(opts, "em", "", &n.children, out, false),
-        Node::Strong(n) => wrap(opts, "strong", "", &n.children, out, false),
-        Node::InlineCode(n) => out.push_str(&format!("<code>{}</code>", escape(&n.value))),
-        Node::Link(n) => {
-            let attrs = format!(
-                " href=\"{}\"{}",
-                escape(&link_href(opts.source, n)),
-                title_attr(&n.title)
-            );
-            wrap(opts, "a", &attrs, &n.children, out, false);
-        }
-        Node::Image(n) => out.push_str(&format!(
-            "<img src=\"{}\" alt=\"{}\"{}>",
-            escape(&n.url),
-            escape(&n.alt),
-            title_attr(&n.title)
-        )),
-        Node::LineBreak(_) => out.push_str("<br>\n"),
-        Node::Admonition(n) => {
-            let title = n.title.clone().unwrap_or_else(|| capitalize(&n.kind));
-            out.push_str(&format!(
-                "<aside class=\"admonition {}\">\n<p class=\"admonition-title\">{}</p>\n",
-                escape(&n.kind),
-                escape(&title)
-            ));
-            children(opts, &n.children, out);
-            out.push_str("</aside>\n");
-        }
-        Node::DefinitionList(n) => {
-            out.push_str("<dl>\n");
-            children(opts, &n.children, out);
-            out.push_str("</dl>\n");
-        }
-        Node::DefinitionTerm(n) => wrap(opts, "dt", "", &n.children, out, true),
-        Node::DefinitionDescription(n) => wrap(opts, "dd", "", &n.children, out, true),
-        Node::FootnoteReference(n) => {
-            let label = escape(&n.label);
-            out.push_str(&format!(
-                "<sup class=\"footnote-ref\"><a href=\"#fn-{label}\" id=\"fnref-{label}\">{label}</a></sup>"
-            ));
-        }
-        Node::FootnoteDefinition(n) => {
-            let label = escape(&n.label);
-            out.push_str(&format!(
-                "<div class=\"footnote\" id=\"fn-{label}\">\n<p class=\"footnote-label\"><a href=\"#fnref-{label}\">{label}</a></p>\n"
-            ));
-            children(opts, &n.children, out);
-            out.push_str("</div>\n");
-        }
-        // Delimited for client-side typesetting (KaTeX or MathJax). A span
-        // even for display math, which may sit inside a paragraph.
-        Node::Math(n) if n.display => out.push_str(&format!(
-            "<span class=\"math display\">\\[{}\\]</span>",
-            escape(&n.value)
-        )),
-        Node::Math(n) => out.push_str(&format!(
-            "<span class=\"math inline\">\\({}\\)</span>",
-            escape(&n.value)
-        )),
-        Node::Figure(n) => {
-            out.push_str(&format!("<figure{}>\n", id_attr(&n.id)));
-            children(opts, &n.children, out);
-            out.push_str("</figure>\n");
-        }
-        Node::Caption(n) => wrap(opts, "figcaption", "", &n.children, out, true),
-        Node::Anchor(n) => out.push_str(&format!("<span id=\"{}\"></span>", escape(&n.id))),
-        // Highlighted code from `transform-highlight`: its HTML as is.
-        Node::Custom(n)
-            if n.kind == "highlight" && n.attrs.get("html").is_some_and(|h| h.is_string()) =>
-        {
-            out.push_str(n.attrs["html"].as_str().unwrap_or_default());
-        }
-        // An inline custom node: a span, or one of a few inline elements.
-        Node::Custom(n) if n.attrs.get("inline") == Some(&serde_json::Value::Bool(true)) => {
-            let tag = n
-                .attrs
-                .get("html_tag")
-                .and_then(serde_json::Value::as_str)
-                .filter(|t| INLINE_TAGS.contains(t))
-                .unwrap_or("span");
-            let mut attrs = format!(" class=\"{}\"", escape(&n.kind));
-            if let Some(title) = n.attrs.get("title").and_then(serde_json::Value::as_str) {
-                attrs.push_str(&format!(" title=\"{}\"", escape(title)));
-            }
-            wrap(opts, tag, &attrs, &n.children, out, false);
-        }
-        Node::Custom(n) => {
-            let tag = n
-                .attrs
-                .get("html_tag")
-                .and_then(serde_json::Value::as_str)
-                .filter(|t| BLOCK_TAGS.contains(t))
-                .unwrap_or("div");
-            let mut attrs = format!(" class=\"{}\"", escape(&n.kind));
-            if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
-                attrs.push_str(&format!(" id=\"{}\"", escape(id)));
-            }
-            wrap(opts, tag, &attrs, &n.children, out, true);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    use lsdocs_plugin_sdk::doctree::{Heading, Link, Paragraph, text};
+    use lsdocs_plugin_sdk::doctree::{Heading, Link, Node, Paragraph, text};
 
     fn site() -> SiteInfo {
         SiteInfo {
@@ -706,204 +372,10 @@ mod tests {
             "{html}"
         );
         assert!(
-            html.contains("<h1 id=\"t\">Tom &amp; Jerry <a class=\"anchor\" href=\"#t\" aria-label=\"Link to this section\">#</a></h1>\n<p>&lt;script&gt; <a href=\"other.html#part\">other</a></p>\n"),
+            html.contains("<h1 id=\"t\">Tom &amp; Jerry <a class=\"lsd-anchor\" href=\"#t\" aria-label=\"Link to this section\">#</a></h1>\n<p>&lt;script&gt; <a href=\"other.html#part\">other</a></p>\n"),
             "{html}"
         );
         assert!(html.contains("<a href=\"index.html\">Site</a>"), "{html}");
-    }
-
-    #[test]
-    fn renders_the_shared_block_kinds() {
-        use lsdocs_plugin_sdk::doctree::{
-            Admonition, Anchor, Caption, DefinitionDescription, DefinitionList, DefinitionTerm,
-            Figure, FootnoteDefinition, FootnoteReference, Image, Math,
-        };
-        let para = |nodes: Vec<Node>| {
-            Node::Paragraph(Paragraph {
-                children: nodes,
-                ..Paragraph::default()
-            })
-        };
-        let mut doc = Document::new("a.md");
-        doc.children = vec![
-            Node::Admonition(Admonition {
-                kind: "warning".into(),
-                children: vec![para(vec![text("Careful")])],
-                ..Admonition::default()
-            }),
-            Node::DefinitionList(DefinitionList {
-                children: vec![
-                    Node::DefinitionTerm(DefinitionTerm {
-                        children: vec![text("Term")],
-                        ..DefinitionTerm::default()
-                    }),
-                    Node::DefinitionDescription(DefinitionDescription {
-                        children: vec![para(vec![text("Meaning")])],
-                        ..DefinitionDescription::default()
-                    }),
-                ],
-                ..DefinitionList::default()
-            }),
-            para(vec![
-                Node::Anchor(Anchor {
-                    id: "here".into(),
-                    ..Anchor::default()
-                }),
-                Node::Math(Math {
-                    value: "a<b".into(),
-                    ..Math::default()
-                }),
-                Node::FootnoteReference(FootnoteReference {
-                    label: "1".into(),
-                    ..FootnoteReference::default()
-                }),
-            ]),
-            Node::Math(Math {
-                value: "x^2".into(),
-                display: true,
-                ..Math::default()
-            }),
-            Node::Figure(Figure {
-                id: Some("fig".into()),
-                children: vec![
-                    Node::Image(Image {
-                        url: "a.png".into(),
-                        alt: "A".into(),
-                        ..Image::default()
-                    }),
-                    Node::Caption(Caption {
-                        children: vec![text("An A")],
-                        ..Caption::default()
-                    }),
-                ],
-                ..Figure::default()
-            }),
-            Node::FootnoteDefinition(FootnoteDefinition {
-                label: "1".into(),
-                children: vec![para(vec![text("Note.")])],
-                ..FootnoteDefinition::default()
-            }),
-        ];
-        let expected = [
-            "<aside class=\"admonition warning\">",
-            "<p class=\"admonition-title\">Warning</p>",
-            "<p>Careful</p>",
-            "</aside>",
-            "<dl>",
-            "<dt>Term</dt>",
-            "<dd><p>Meaning</p>",
-            "</dd>",
-            "</dl>",
-            "<p><span id=\"here\"></span><span class=\"math inline\">\\(a&lt;b\\)</span>\
-             <sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\">1</a></sup></p>",
-            "<span class=\"math display\">\\[x^2\\]</span><figure id=\"fig\">",
-            "<img src=\"a.png\" alt=\"A\"><figcaption>An A</figcaption>",
-            "</figure>",
-            "<div class=\"footnote\" id=\"fn-1\">",
-            "<p class=\"footnote-label\"><a href=\"#fnref-1\">1</a></p>",
-            "<p>Note.</p>",
-            "</div>",
-            "",
-        ]
-        .join("\n");
-        assert_eq!(body(&doc, &Options::default()), expected);
-    }
-
-    #[test]
-    fn sections_and_link_targets() {
-        use lsdocs_plugin_sdk::doctree::Section;
-        let target = |document: Option<&str>, anchor: Option<&str>| {
-            Some(LinkTarget {
-                document: document.map(Into::into),
-                anchor: anchor.map(Into::into),
-                label: None,
-            })
-        };
-        let link = |url: &str, target: Option<LinkTarget>| Link {
-            url: url.into(),
-            target,
-            ..Link::default()
-        };
-        let from = "guide/a.md";
-        assert_eq!(
-            link_href(from, &link("x", target(Some("ref/b.rst"), Some("s")))),
-            "../ref/b.html#s"
-        );
-        assert_eq!(link_href(from, &link("x", target(None, Some("s")))), "#s");
-        assert_eq!(
-            link_href(from, &link("x", target(Some(from), Some("s")))),
-            "#s"
-        );
-        assert_eq!(
-            link_href(from, &link("x", target(Some(from), None))),
-            "a.html"
-        );
-        // No target, or an unresolved label: the URL, `.md` rewritten.
-        assert_eq!(link_href(from, &link("c.md#t", None)), "c.html#t");
-        let label = Some(LinkTarget {
-            label: Some("l".into()),
-            ..LinkTarget::default()
-        });
-        assert_eq!(link_href(from, &link("c.md", label)), "c.html");
-
-        let mut doc = Document::new(from);
-        doc.children = vec![Node::Section(Section {
-            id: Some("intro".into()),
-            children: vec![
-                Node::Heading(Heading {
-                    level: 1,
-                    children: vec![text("Intro")],
-                    ..Heading::default()
-                }),
-                Node::Paragraph(Paragraph {
-                    children: vec![text("Hi")],
-                    ..Paragraph::default()
-                }),
-            ],
-            ..Section::default()
-        })];
-        assert_eq!(
-            body(&doc, &Options::default()),
-            "<section id=\"intro\">\n<h1>Intro <a class=\"anchor\" href=\"#intro\" \
-             aria-label=\"Link to this section\">#</a></h1>\n<p>Hi</p>\n</section>\n"
-        );
-    }
-
-    #[test]
-    fn highlighted_code_is_written_as_is() {
-        use lsdocs_plugin_sdk::doctree::{CodeBlock, Custom};
-        let mut doc = Document::new("a.md");
-        let code = Node::CodeBlock(CodeBlock {
-            value: "x".into(),
-            ..CodeBlock::default()
-        });
-        doc.children = vec![
-            Node::Custom(Custom {
-                kind: "highlight".into(),
-                attrs: [("html".to_owned(), serde_json::json!("<pre>X</pre>\n"))].into(),
-                children: vec![code.clone()],
-                ..Custom::default()
-            }),
-            // Without its HTML, the children are rendered instead.
-            Node::Custom(Custom {
-                kind: "highlight".into(),
-                children: vec![code],
-                ..Custom::default()
-            }),
-        ];
-        assert_eq!(
-            body(&doc, &Options::default()),
-            "<pre>X</pre>\n<div class=\"highlight\"><pre><code>x</code></pre>\n</div>\n"
-        );
-    }
-
-    #[test]
-    fn heading_anchors_can_be_turned_off() {
-        let options = Options::from_value(&serde_json::json!({"heading_anchors": false}));
-        assert_eq!(
-            body(&doc("a.md"), &options).lines().next(),
-            Some("<h1 id=\"t\">Tom &amp; Jerry</h1>")
-        );
     }
 
     #[test]
@@ -1006,27 +478,5 @@ mod tests {
             Some("built-in template")
         );
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn link_rewriting() {
-        assert_eq!(rewrite_link("guide.md"), "guide.html");
-        assert_eq!(rewrite_link("../a/b.markdown#x"), "../a/b.html#x");
-        assert_eq!(rewrite_link("page.md?q=1"), "page.html?q=1");
-        assert_eq!(
-            rewrite_link("https://example.com/x.md"),
-            "https://example.com/x.md"
-        );
-        assert_eq!(
-            rewrite_link("//cdn.example.com/x.md"),
-            "//cdn.example.com/x.md"
-        );
-        assert_eq!(
-            rewrite_link("mailto:me@example.com"),
-            "mailto:me@example.com"
-        );
-        assert_eq!(rewrite_link("#section"), "#section");
-        assert_eq!(rewrite_link("image.png"), "image.png");
-        assert_eq!(rewrite_link(".md"), ".md");
     }
 }
