@@ -264,6 +264,42 @@ pub fn settings(
     Ok(merged)
 }
 
+/// Checks the insides of the built-in `default` theme's array settings,
+/// whose defaults (empty) cannot say what their elements are:
+/// `extra_css` and `extra_js` are strings, `social` tables of an `icon`
+/// and a `link` string. An error names `file`.
+pub fn check_default_theme(values: &Value, file: &str) -> Result<(), String> {
+    let elements = |key: &str| {
+        values
+            .get(key)
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    };
+    for key in ["extra_css", "extra_js"] {
+        if !elements(key).iter().all(Value::is_string) {
+            return Err(format!(
+                "{file}: theme setting `{key}` must be an array of strings"
+            ));
+        }
+    }
+    let link = |value: &Value| {
+        value.as_object().is_some_and(|link| {
+            link.len() == 2
+                && ["icon", "link"]
+                    .iter()
+                    .all(|key| link.get(*key).is_some_and(Value::is_string))
+        })
+    };
+    if !elements("social").iter().all(link) {
+        return Err(format!(
+            "{file}: theme setting `social` must be an array of tables of an `icon` \
+             and a `link` (strings), e.g. {{ icon = \"mail\", link = \"mailto:...\" }}"
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]

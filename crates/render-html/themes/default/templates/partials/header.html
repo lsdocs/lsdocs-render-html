@@ -1,0 +1,12 @@
+<header class="lsd-header">
+{%- if drawer %}
+<label class="lsd-drawer-button" for="lsd-drawer" title="{{ t.menu }}">{{ icons.icon("menu") }}</label>
+{%- endif %}
+<a class="lsd-title" href="{{ page.root }}index.html">
+{%- if theme.logo %}<img class="lsd-logo" src="{{ theme.logo | url }}" alt="">{% endif -%}
+<span>{{ site.title or t.home }}</span></a>
+<div class="lsd-header-tools">
+<lsd-search class="lsd-search"></lsd-search>
+<lsd-palette class="lsd-palette"></lsd-palette>
+</div>
+</header>

@@ -53,8 +53,10 @@
 //!
 //! They have the filters `link` (a link to a source file becomes a link to
 //! its output: `{{ item.url | link }}`) and `page_url` (a source path
-//! becomes the relative URL of its output: `{{ item.source | page_url }}`),
-//! and the functions `asset(path)`, the relative URL of the theme's asset
+//! becomes the relative URL of its output: `{{ item.source | page_url }}`)
+//! and `url` (a path from the site root becomes a URL relative to the
+//! page, and URLs stay as they are: `{{ theme.logo | url }}`), and the
+//! functions `asset(path)`, the relative URL of the theme's asset
 //! `path` (under `assets/`), and `asset_importmap()`, an import map from
 //! each JavaScript module's unhashed URL to its hashed one, so that a
 //! theme's modules import each other by their plain relative names.
@@ -289,6 +291,9 @@ impl Prepared {
     /// checked against the theme's; they are in `file`, for messages).
     pub fn new(theme: &Theme, theme_settings: Option<&Json>, file: &str) -> Result<Self, String> {
         let values = theme::settings(&theme.settings, theme_settings, file)?;
+        if theme.name == DEFAULT_THEME {
+            theme::check_default_theme(&values, file)?;
+        }
         let assets = Arc::new(Assets::new(&theme.assets));
         let mut env = Environment::new();
         // Escaped here, not by minijinja, which would also escape every `/`.
@@ -302,6 +307,12 @@ impl Prepared {
                 &page_source(state),
                 &output_path(&source),
             )))
+        });
+        // A path from the site root becomes a URL relative to the page being
+        // rendered; URLs (with a scheme, or starting with `/` or `#`) are
+        // kept.
+        env.add_filter("url", |state: &State, url: String| {
+            Value::from_safe_string(escape(&site_url(&page_source(state), &url)))
         });
         let urls = Arc::clone(&assets);
         env.add_function(
@@ -351,6 +362,24 @@ fn page_source(state: &State) -> String {
         .and_then(|page| page.get_attr("source").ok())
         .and_then(|s| s.as_str().map(str::to_owned))
         .unwrap_or_default()
+}
+
+/// `url` as a link from the page whose source is `from`: a path from the
+/// site root (`images/logo.svg`) becomes relative to the page; a URL with
+/// a scheme (`https:`, `mailto:`), or one starting with `/`, `#` or `?`,
+/// is kept.
+fn site_url(from: &str, url: &str) -> String {
+    let scheme = url.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    });
+    if url.is_empty() || scheme || url.starts_with(['/', '#', '?']) {
+        url.to_owned()
+    } else {
+        relative_path(from, url)
+    }
 }
 
 /// Renders a full page with the given template environment.
@@ -511,14 +540,17 @@ mod tests {
             html.contains("<h1 id=\"t\">Tom &amp; Jerry <a class=\"lsd-anchor\" href=\"#t\" aria-label=\"Link to this section\">#</a></h1>\n<p>&lt;script&gt; <a href=\"other.html#part\">other</a></p>\n"),
             "{html}"
         );
-        assert!(html.contains("<a href=\"index.html\">Site</a>"), "{html}");
+        assert!(
+            html.contains("<a class=\"lsd-title\" href=\"index.html\"><span>Site</span></a>"),
+            "{html}"
+        );
     }
 
     #[test]
     fn nested_pages_link_home_relatively() {
         let html = page(&doc("guide/deep/a.md"), &site()).unwrap();
         assert!(
-            html.contains("<a href=\"../../index.html\">Site</a>"),
+            html.contains("href=\"../../index.html\"><span>Site</span></a>"),
             "{html}"
         );
     }
@@ -587,10 +619,11 @@ mod tests {
             let html = render_with(spec, &root, Some("over"), &doc("a.md")).unwrap();
             assert!(html.contains("<footer>Mine</footer>"), "{spec}: {html}");
             assert!(!html.contains("Built with lsdocs"), "{spec}: {html}");
-            assert!(
-                html.contains("<a href=\"index.html\">Site</a></header>"),
-                "{spec}: {html}"
-            );
+            let home = match spec {
+                "plain" => "<a href=\"index.html\">Site</a></header>",
+                _ => "<a class=\"lsd-title\" href=\"index.html\"><span>Site</span></a>",
+            };
+            assert!(html.contains(home), "{spec}: {html}");
             assert!(html.contains("<p>&lt;script&gt; "), "{spec}: {html}");
         }
         std::fs::remove_dir_all(&root).unwrap();
@@ -782,6 +815,150 @@ mod tests {
             built_in
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A page with every part of the default theme's chrome: navigation,
+    /// neighbors, a table of contents, and a link in its content.
+    fn full_doc(source: &str) -> Document {
+        let mut full = doc(source);
+        full.children.push(Node::Paragraph(Paragraph {
+            children: vec![Node::Link(Link {
+                url: "https://example.org/in-content".into(),
+                children: vec![text("out")],
+                ..Link::default()
+            })],
+            ..Paragraph::default()
+        }));
+        full.metadata.insert(
+            "toc".into(),
+            serde_json::json!([{"id": "a", "title": "A", "level": 2, "children": []}]),
+        );
+        full.metadata.insert(
+            "nav".into(),
+            serde_json::json!({
+                "items": [
+                    {"title": "Home", "url": "index.md", "source": "index.md"},
+                    {"title": "Guide", "children": [
+                        {"title": "A", "url": "guide/a.md", "source": "guide/a.md", "current": true},
+                    ]},
+                ],
+                "prev": {"title": "Home", "url": "index.md", "source": "index.md"},
+                "next": {"title": "B", "url": "guide/b.md", "source": "guide/b.md"},
+            }),
+        );
+        full
+    }
+
+    /// Renders `doc` with the built-in default theme and `settings`.
+    fn render_default(settings: serde_json::Value, doc: &Document) -> Result<String, String> {
+        let theme = theme::load(DEFAULT_THEME, Path::new(""), None)?;
+        let prepared = Prepared::new(&theme, Some(&settings), "html/settings.toml")?;
+        render_page(prepared.env(), doc, &site(), &Options::default()).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn default_theme_settings_reach_the_page() {
+        let html = render_default(
+            serde_json::json!({
+                "primary": "teal",
+                "accent": "#123456",
+                "scheme": "dark",
+                "language": "de",
+                "font_text": "Inter",
+                "logo": "images/logo.svg",
+                "favicon": "images/icon.png",
+                "extra_css": ["css/extra.css"],
+                "extra_js": ["https://example.com/x.js"],
+                "social": [{"icon": "mail", "link": "mailto:a@example.com"}],
+                "footer": "Copyright &copy; Us",
+                "edit_url": "https://example.com/edit/main/{path}",
+            }),
+            &full_doc("guide/a.md"),
+        )
+        .unwrap();
+        assert!(html.contains("--lsd-primary: #009485;"), "{html}");
+        assert!(html.contains("--lsd-accent: #123456;"), "{html}");
+        assert!(
+            html.contains("<html lang=\"de\" data-lsd-scheme=\"dark\""),
+            "{html}"
+        );
+        assert!(
+            html.contains("localStorage.getItem(\"lsd-scheme\")"),
+            "{html}"
+        );
+        assert!(
+            html.contains("--lsd-font-text: &quot;Inter&quot;, var(--lsd-font-system);\">"),
+            "{html}"
+        );
+        assert!(html.contains("src=\"../images/logo.svg\""), "{html}");
+        assert!(
+            html.contains("<link rel=\"icon\" href=\"../images/icon.png\">"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<link rel=\"stylesheet\" href=\"../css/extra.css\">"),
+            "{html}"
+        );
+        assert!(
+            html.contains("<script src=\"https://example.com/x.js\" defer></script>"),
+            "{html}"
+        );
+        assert!(html.contains("href=\"mailto:a@example.com\""), "{html}");
+        assert!(html.contains("Copyright &copy; Us"), "{html}");
+        assert!(
+            html.contains("href=\"https://example.com/edit/main/guide/a.md\""),
+            "{html}"
+        );
+        // Without settings: no edit link, logo or extra files.
+        let html = render_default(serde_json::json!({}), &full_doc("guide/a.md")).unwrap();
+        assert!(html.contains("--lsd-primary: #4051b5;"), "{html}");
+        assert!(!html.contains("lsd-edit"), "{html}");
+        assert!(!html.contains("<img"), "{html}");
+        assert!(!html.contains("rel=\"icon\""), "{html}");
+    }
+
+    #[test]
+    fn default_theme_settings_are_checked_inside() {
+        let file = "html/settings.toml";
+        for (settings, key) in [
+            (serde_json::json!({"social": [{"icon": "mail"}]}), "social"),
+            (
+                serde_json::json!({"social": [{"icon": "mail", "link": "x", "url": "y"}]}),
+                "social",
+            ),
+            (serde_json::json!({"social": ["mail"]}), "social"),
+            (serde_json::json!({"extra_css": [1]}), "extra_css"),
+            (serde_json::json!({"extra_js": [{}]}), "extra_js"),
+        ] {
+            let err = render_default(settings.clone(), &doc("a.md")).unwrap_err();
+            assert!(
+                err.contains(&format!("`{key}`")) && err.contains(file),
+                "{settings}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_third_party_requests() {
+        let full = full_doc("guide/a.md");
+        let html = render_default(serde_json::json!({}), &full).unwrap();
+        let content = body(&full, &Options::default());
+        assert!(content.contains("https://example.org/in-content"));
+        let chrome = html.replace(&content, "");
+        for scheme in ["http:", "https:", "//"] {
+            let hits: Vec<_> = chrome
+                .match_indices(scheme)
+                .map(|(at, _)| &chrome[at.saturating_sub(40)..(at + 40).min(chrome.len())])
+                .collect();
+            assert!(hits.is_empty(), "{scheme}: {hits:#?}");
+        }
+        let theme = theme::load(DEFAULT_THEME, Path::new(""), None).unwrap();
+        for (path, bytes) in &theme.assets {
+            let text = String::from_utf8_lossy(bytes).replace(['"', '\''], "");
+            for request in ["url(http", "url(//", "@import"] {
+                assert!(!text.contains(request), "{path}: {request}");
+            }
+        }
     }
 
     #[tokio::test]

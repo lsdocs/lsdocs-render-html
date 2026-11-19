@@ -1,0 +1,12 @@
+<nav class="lsd-toc-sidebar" aria-label="{{ t.toc }}">
+<p class="lsd-toc-title">{{ t.toc }}</p>
+<ul>
+{%- for item in page.toc recursive %}
+<li><a href="#{{ item.id }}">{{ item.title }}</a>
+{%- if item.children %}
+<ul>{{ loop(item.children) }}
+</ul>
+{%- endif %}</li>
+{%- endfor %}
+</ul>
+</nav>

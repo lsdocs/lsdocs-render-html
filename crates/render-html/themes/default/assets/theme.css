@@ -1,0 +1,363 @@
+/*
+ * The default theme's chrome: the header bar, the site navigation, the
+ * table of contents sidebar, the pager and the footer, a drawer for the
+ * navigation below 76.25em (and for the table of contents below 60em),
+ * and print. The look follows zensical-ui (github.com/zensical/ui); none
+ * of its code is used. The properties are content.css'.
+ */
+@layer lsd-theme {
+  :root {
+    --lsd-header-height: 3rem;
+    --lsd-width: 80rem;
+    --lsd-sidebar: 15rem;
+    --lsd-gutter: 1rem;
+  }
+
+  html { scroll-padding-top: calc(var(--lsd-header-height) + 1rem); }
+
+  .lsd-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex: none;
+    vertical-align: middle;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  img.lsd-icon { object-fit: contain; }
+
+  /* Skip link: shown when focused. */
+  .lsd-skip {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 40;
+    padding: 0.5rem 1rem;
+    color: var(--lsd-primary-fg);
+    background: var(--lsd-primary);
+    border-radius: var(--lsd-radius);
+    transform: translateY(-200%);
+
+    &:focus-visible { transform: none; color: var(--lsd-primary-fg); }
+  }
+
+  /* Header bar. */
+  .lsd-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: var(--lsd-header-height);
+    padding-inline: max(var(--lsd-gutter), (100% - var(--lsd-width)) / 2 + var(--lsd-gutter));
+    color: var(--lsd-primary-fg);
+    background: var(--lsd-primary);
+    box-shadow: 0 0 0.2rem rgb(0 0 0 / 0.1), 0 0.2rem 0.4rem rgb(0 0 0 / 0.2);
+
+    & a { color: inherit; }
+  }
+  .lsd-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+    font-size: 1.125rem;
+    font-weight: 700;
+
+    & span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    &:is(:hover, :focus-visible) { color: inherit; opacity: 0.85; }
+  }
+  .lsd-logo { display: block; height: 1.75rem; width: auto; }
+  .lsd-header-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  /* Slots for the theme's scripts: nothing shows without them. */
+  :is(lsd-search, lsd-palette):not(:defined) { display: none; }
+
+  /* The drawer's switch: a checkbox, visually hidden, and its label in the
+     header. */
+  .lsd-drawer-toggle {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .lsd-drawer-button {
+    display: none;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-left: -0.5rem;
+    border-radius: 50%;
+    cursor: pointer;
+
+    &:hover { background: rgb(255 255 255 / 0.12); }
+    .lsd-drawer-toggle:focus-visible ~ .lsd-header & {
+      outline: 2px solid currentColor;
+      outline-offset: -2px;
+    }
+  }
+  .lsd-overlay { display: none; }
+
+  /* Layout: navigation, page, table of contents. */
+  .lsd-layout {
+    display: grid;
+    grid-template-columns: var(--lsd-sidebar) minmax(0, 1fr) var(--lsd-sidebar);
+    grid-template-areas: "nav main toc";
+    column-gap: 2rem;
+    max-width: var(--lsd-width);
+    min-height: calc(100vh - var(--lsd-header-height) - 4rem);
+    margin: 0 auto;
+    padding-inline: var(--lsd-gutter);
+  }
+  .lsd-drawer { display: contents; }
+  .lsd-main { grid-area: main; min-width: 0; padding: 1.5rem 0 3rem; }
+  .lsd-nav, .lsd-toc-sidebar {
+    position: sticky;
+    top: var(--lsd-header-height);
+    align-self: start;
+    max-height: calc(100vh - var(--lsd-header-height));
+    overflow-y: auto;
+    padding: 1.5rem 0.25rem 1.5rem 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+
+    &:is(:hover, :focus-within) { scrollbar-color: var(--lsd-fg-faint) transparent; }
+
+    & ul { margin: 0; padding: 0; list-style: none; }
+    & li { margin: 0; }
+    & a, & span { display: block; padding: 0.3rem 0; }
+  }
+
+  /* Site navigation. */
+  .lsd-nav {
+    grid-area: nav;
+
+    & a { color: var(--lsd-fg); }
+    & a:is(:hover, :focus-visible) { color: var(--lsd-accent); }
+    & a[aria-current="page"] { color: var(--lsd-link); font-weight: 700; }
+    & span { font-weight: 700; color: var(--lsd-fg); }
+    & ul ul { margin-left: 0.15rem; padding-left: 0.75rem; border-left: 1px solid var(--lsd-border); }
+    & > ul > .lsd-nav-section { margin-top: 1rem; }
+    & > ul > .lsd-nav-section > ul { margin-left: 0; padding-left: 0; border: 0; }
+    & > ul > .lsd-nav-section > :is(a, span) {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--lsd-fg-muted);
+    }
+    & > ul > .lsd-nav-section > a[aria-current="page"] { color: var(--lsd-link); }
+  }
+  .lsd-nav-title { display: none; }
+
+  /* Table of contents. */
+  .lsd-toc-sidebar {
+    grid-area: toc;
+
+    & a { color: var(--lsd-fg-muted); }
+    & a:is(:hover, :focus-visible) { color: var(--lsd-accent); }
+    & a:is([aria-current], .lsd-active) { color: var(--lsd-link); }
+    & ul ul { padding-left: 0.75rem; }
+  }
+  .lsd-toc-title {
+    margin: 0 0 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--lsd-fg);
+  }
+
+  /* Edit link. */
+  .lsd-edit {
+    float: right;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.25rem 0 0.5rem 1rem;
+    padding: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--lsd-fg-faint);
+    border-radius: var(--lsd-radius);
+
+    & .lsd-icon { width: 1.1rem; height: 1.1rem; }
+    & span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+
+  /* Previous and next pages. */
+  .lsd-pager {
+    display: flex;
+    gap: 1rem;
+    margin-top: 3rem;
+
+    & a {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      flex: 0 1 50%;
+      min-width: 0;
+      padding: 0.75rem 1rem;
+      color: var(--lsd-fg);
+      border: 1px solid var(--lsd-border);
+      border-radius: calc(var(--lsd-radius) * 2);
+      transition: border-color 125ms, color 125ms;
+    }
+    & a:is(:hover, :focus-visible) { color: var(--lsd-accent); border-color: currentColor; }
+  }
+  .lsd-next { margin-left: auto; text-align: right; }
+  .lsd-pager-label { font-size: 0.75rem; color: var(--lsd-fg-muted); }
+  .lsd-pager-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lsd-prev .lsd-pager-title::before { content: "\2190\00a0"; }
+  .lsd-next .lsd-pager-title::after { content: "\00a0\2192"; }
+
+  /* Footer. */
+  .lsd-footer {
+    font-size: 0.8rem;
+    color: var(--lsd-fg-muted);
+    background: var(--lsd-bg-soft);
+    border-top: 1px solid var(--lsd-border);
+
+    & a { color: inherit; }
+    & a:is(:hover, :focus-visible) { color: var(--lsd-accent); }
+  }
+  .lsd-footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.5rem;
+    max-width: var(--lsd-width);
+    margin: 0 auto;
+    padding: 1.25rem var(--lsd-gutter);
+  }
+  .lsd-social {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0 0 0 auto;
+    padding: 0;
+    list-style: none;
+
+    & a { display: grid; place-items: center; width: 2rem; height: 2rem; }
+  }
+
+  /* Below 76.25em the navigation is a drawer. */
+  @media (width < 76.25em) {
+    .lsd-layout {
+      grid-template-columns: minmax(0, 1fr) var(--lsd-sidebar);
+      grid-template-areas: "main toc";
+    }
+    .lsd-drawer-button { display: grid; }
+    body:not(:has(.lsd-nav)) .lsd-drawer-button { display: none; }
+    .lsd-nav {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 30;
+      width: min(17rem, 85vw);
+      max-height: none;
+      padding: 0 0 1rem;
+      background: var(--lsd-bg);
+      box-shadow: 0 0 1rem rgb(0 0 0 / 0.3);
+      transform: translateX(-105%);
+      visibility: hidden;
+      transition: transform 250ms, visibility 250ms;
+
+      & > ul { padding-inline: 1rem; }
+      .lsd-drawer-toggle:checked ~ .lsd-layout & { transform: none; visibility: visible; }
+    }
+    .lsd-nav-title {
+      display: flex;
+      align-items: center;
+      height: var(--lsd-header-height);
+      margin: 0 0 0.5rem;
+      padding: 0 1rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--lsd-primary-fg);
+      background: var(--lsd-primary);
+    }
+    .lsd-drawer-toggle:checked ~ .lsd-layout .lsd-overlay {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 25;
+      background: rgb(0 0 0 / 0.5);
+      cursor: pointer;
+    }
+    body:has(.lsd-drawer-toggle:checked) { overflow: hidden; }
+  }
+
+  /* Below 60em the table of contents joins the navigation in the drawer. */
+  @media (width < 60em) {
+    .lsd-layout {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "main";
+    }
+    body:not(:has(.lsd-nav)) .lsd-drawer-button { display: grid; }
+    .lsd-drawer {
+      display: block;
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 30;
+      width: min(17rem, 85vw);
+      overflow-y: auto;
+      background: var(--lsd-bg);
+      box-shadow: 0 0 1rem rgb(0 0 0 / 0.3);
+      transform: translateX(-105%);
+      visibility: hidden;
+      transition: transform 250ms, visibility 250ms;
+
+      .lsd-drawer-toggle:checked ~ .lsd-layout & { transform: none; visibility: visible; }
+    }
+    .lsd-drawer .lsd-nav {
+      position: static;
+      width: auto;
+      box-shadow: none;
+      transform: none;
+      visibility: inherit;
+      transition: none;
+      overflow: visible;
+    }
+    .lsd-drawer .lsd-toc-sidebar {
+      position: static;
+      max-height: none;
+      overflow: visible;
+      margin: 0 1rem;
+      padding: 1rem 0;
+      border-top: 1px solid var(--lsd-border);
+
+      .lsd-drawer:not(:has(.lsd-nav)) & { border-top: 0; }
+    }
+    .lsd-main { padding-top: 1rem; }
+    .lsd-article h1 { font-size: 1.75em; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lsd-nav, .lsd-drawer { transition: none; }
+  }
+
+  @media print {
+    :root { color-scheme: light; }
+    .lsd-header, .lsd-skip, .lsd-drawer, .lsd-nav, .lsd-toc-sidebar, .lsd-overlay,
+    .lsd-edit, .lsd-pager, .lsd-footer, .lsd-anchor { display: none; }
+    .lsd-layout { display: block; max-width: none; padding: 0; }
+    .lsd-main { padding: 0; }
+    pre { white-space: pre-wrap; }
+    .lsd-admonition { break-inside: avoid; box-shadow: none; }
+  }
+}

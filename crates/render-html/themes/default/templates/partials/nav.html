@@ -1,0 +1,14 @@
+<nav class="lsd-nav" aria-label="{{ t.site }}">
+<p class="lsd-nav-title">{{ site.title or t.home }}</p>
+<ul>
+{%- for item in page.nav["items"] recursive %}
+<li{% if item.children %} class="lsd-nav-section"{% endif %}>
+{%- if item.source %}<a href="{{ item.source | page_url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a>
+{%- else %}<span>{{ item.title }}</span>{% endif %}
+{%- if item.children %}
+<ul>{{ loop(item.children) }}
+</ul>
+{%- endif %}</li>
+{%- endfor %}
+</ul>
+</nav>

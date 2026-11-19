@@ -1,71 +1,120 @@
+{%- import "partials/icons.html" as icons -%}
+{%- set palette = {
+  "red": ["#ef5350", "#fff", "#ff1947"],
+  "pink": ["#e92063", "#fff", "#f50056"],
+  "purple": ["#ab47bc", "#fff", "#df41fb"],
+  "deep-purple": ["#7e56c2", "#fff", "#7c4dff"],
+  "indigo": ["#4051b5", "#fff", "#526cfe"],
+  "blue": ["#2094f3", "#fff", "#4287ff"],
+  "light-blue": ["#02a6f2", "#fff", "#0091eb"],
+  "cyan": ["#00bdd6", "#fff", "#00bad6"],
+  "teal": ["#009485", "#fff", "#00bda4"],
+  "green": ["#4cae4f", "#fff", "#00c753"],
+  "light-green": ["#8bc34b", "#000", "#63de17"],
+  "lime": ["#cbdc38", "#000", "#b0eb00"],
+  "yellow": ["#ffec3d", "#000", "#ffd500"],
+  "amber": ["#ffc105", "#000", "#ffaa00"],
+  "orange": ["#ffa724", "#000", "#ff9100"],
+  "deep-orange": ["#ff6e42", "#fff", "#ff6e42"],
+  "brown": ["#795649", "#fff", "#795649"],
+  "grey": ["#757575", "#fff", "#757575"],
+  "blue-grey": ["#546d78", "#fff", "#546d78"],
+  "black": ["#000", "#fff", "#526cfe"],
+  "white": ["#fff", "#000", "#526cfe"],
+} -%}
+{%- set primary = palette[theme.primary] if theme.primary in palette else [theme.primary, "#fff"] -%}
+{%- set accent = palette[theme.accent][2] if theme.accent in palette else theme.accent -%}
+{%- set labels = {
+  "en": {
+    "skip": "Skip to content",
+    "menu": "Navigation",
+    "site": "Site",
+    "toc": "On this page",
+    "pages": "Pages",
+    "previous": "Previous",
+    "next": "Next",
+    "edit": "Edit this page",
+    "built": "Built with",
+    "home": "Home",
+  },
+} -%}
+{%- set t = labels[theme.language] or labels["en"] -%}
 <!doctype html>
-<html lang="en">
+<html lang="{{ theme.language }}" data-lsd-scheme="{{ theme.scheme }}" style="--lsd-primary: {{ primary[0] }}; --lsd-primary-fg: {{ primary[1] }}; --lsd-accent: {{ accent }};
+{%- if theme.font_text %} --lsd-font-text: &quot;{{ theme.font_text }}&quot;, var(--lsd-font-system);{% endif %}
+{%- if theme.font_code %} --lsd-font-code: &quot;{{ theme.font_code }}&quot;, var(--lsd-font-mono);{% endif %}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var s=localStorage.getItem("lsd-scheme");if(s==="light"||s==="dark"||s==="auto")document.documentElement.setAttribute("data-lsd-scheme",s)}catch(e){}</script>
 <title>{% block title %}{% if site.title and site.title != page.title %}{{ page.title }} | {{ site.title }}{% else %}{{ page.title }}{% endif %}{% endblock %}</title>
+<link rel="stylesheet" href="{{ asset('content.css') }}">
+<link rel="stylesheet" href="{{ asset('theme.css') }}">
+{%- if theme.favicon %}
+<link rel="icon" href="{{ theme.favicon | url }}">
+{%- endif %}
+{%- for css in theme.extra_css %}
+<link rel="stylesheet" href="{{ css | url }}">
+{%- endfor %}
 {%- block head %}{% endblock %}
 {{ asset_importmap() }}
 {%- block scripts %}{% endblock %}
+{%- for js in theme.extra_js %}
+<script src="{{ js | url }}" defer></script>
+{%- endfor %}
 </head>
 <body>
+<a class="lsd-skip" href="#lsd-content">{{ t.skip }}</a>
+{%- set drawer = page.nav or page.toc %}
+{%- if drawer %}
+<input class="lsd-drawer-toggle" type="checkbox" id="lsd-drawer" aria-label="{{ t.menu }}">
+{%- endif %}
 {%- block header %}
-<header class="lsd-header"><a href="{{ page.root }}index.html">{{ site.title or "Home" }}</a></header>
+{% include "partials/header.html" %}
 {%- endblock %}
 <div class="lsd-layout">
+{%- if drawer %}
+<label class="lsd-overlay" for="lsd-drawer" aria-hidden="true"></label>
+<div class="lsd-drawer">
+{%- endif %}
 {%- block nav %}
 {%- if page.nav %}
-<nav class="lsd-nav" aria-label="Site">
-<ul>
-{%- for item in page.nav["items"] recursive %}
-<li>
-{%- if item.source %}<a href="{{ item.source | page_url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a>
-{%- else %}<span>{{ item.title }}</span>{% endif %}
-{%- if item.children %}
-<ul>{{ loop(item.children) }}
-</ul>
-{%- endif %}</li>
-{%- endfor %}
-</ul>
-</nav>
+{% include "partials/nav.html" %}
 {%- endif %}
 {%- endblock %}
-<main>
+{%- block toc %}
+{%- if page.toc %}
+{% include "partials/toc.html" %}
+{%- endif %}
+{%- endblock %}
+{%- if drawer %}
+</div>
+{%- endif %}
+<main class="lsd-main" id="lsd-content">
+{%- if theme.edit_url %}
+<a class="lsd-edit" href="{{ theme.edit_url | replace('{path}', page.source) | url }}" title="{{ t.edit }}">{{ icons.icon("edit") }}<span>{{ t.edit }}</span></a>
+{%- endif %}
+<article class="lsd-article">
 {%- block content %}
 {{ content }}
 {%- endblock %}
+</article>
 {%- block pager %}
 {%- if page.previous or page.next %}
-<nav class="lsd-pager" aria-label="Pages">
+<nav class="lsd-pager" aria-label="{{ t.pages }}">
 {%- if page.previous %}
-<a class="lsd-prev" href="{{ page.previous.source | page_url }}">{{ page.previous.title }}</a>
+<a class="lsd-prev" href="{{ page.previous.source | page_url }}" rel="prev"><span class="lsd-pager-label">{{ t.previous }}</span><span class="lsd-pager-title">{{ page.previous.title }}</span></a>
 {%- endif %}
 {%- if page.next %}
-<a class="lsd-next" href="{{ page.next.source | page_url }}">{{ page.next.title }}</a>
+<a class="lsd-next" href="{{ page.next.source | page_url }}" rel="next"><span class="lsd-pager-label">{{ t.next }}</span><span class="lsd-pager-title">{{ page.next.title }}</span></a>
 {%- endif %}
 </nav>
 {%- endif %}
 {%- endblock %}
 </main>
-{%- block toc %}
-{%- if page.toc %}
-<nav class="lsd-toc-sidebar" aria-label="On this page">
-<p>On this page</p>
-<ul>
-{%- for item in page.toc recursive %}
-<li><a href="#{{ item.id }}">{{ item.title }}</a>
-{%- if item.children %}
-<ul>{{ loop(item.children) }}
-</ul>
-{%- endif %}</li>
-{%- endfor %}
-</ul>
-</nav>
-{%- endif %}
-{%- endblock %}
 </div>
 {%- block footer %}
-<footer class="lsd-footer">Built with lsdocs</footer>
+{% include "partials/footer.html" %}
 {%- endblock %}
 </body>
 </html>

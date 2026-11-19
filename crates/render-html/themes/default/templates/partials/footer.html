@@ -1,0 +1,15 @@
+<footer class="lsd-footer">
+<div class="lsd-footer-inner">
+{%- if theme.footer %}
+<div class="lsd-footer-text">{{ theme.footer | safe }}</div>
+{%- endif %}
+<div class="lsd-footer-built">{{ t.built }} lsdocs</div>
+{%- if theme.social %}
+<ul class="lsd-social">
+{%- for social in theme.social %}
+<li><a href="{{ social.link | url }}" title="{{ social.icon }}" aria-label="{{ social.icon }}">{{ icons.icon(social.icon) }}</a></li>
+{%- endfor %}
+</ul>
+{%- endif %}
+</div>
+</footer>

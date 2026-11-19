@@ -3,3 +3,35 @@
 # `theme_settings`.
 
 [settings]
+# The color scheme before the reader picks one: "auto" (the system's),
+# "light" or "dark".
+scheme = "auto"
+# The header's color and the links', and the color of hovered links and
+# focus: a name from the palette (red, pink, purple, deep-purple, indigo,
+# blue, light-blue, cyan, teal, green, light-green, lime, yellow, amber,
+# orange, deep-orange, brown, grey, blue-grey, black, white), else any
+# CSS color.
+primary = "indigo"
+accent = "indigo"
+# Font family names for text and code; empty: the system's fonts. Nothing
+# is downloaded: load a web font with `extra_css`.
+font_text = ""
+font_code = ""
+# Paths from the site root (or URLs) of the header's logo and the favicon.
+logo = ""
+favicon = ""
+# The pages' language (`lang`), and of the theme's labels (English for
+# languages without labels).
+language = "en"
+# Stylesheets and scripts added to every page: paths from the site root,
+# or URLs.
+extra_css = []
+extra_js = []
+# Links in the footer: `{ icon = "mail", link = "mailto:..." }`. `icon` is
+# one of link, mail, rss, chat, code, else the path (or URL) of an image.
+social = []
+# The footer's text (HTML).
+footer = ""
+# The edit-this-page link: a URL with `{path}` for the page's source path,
+# e.g. "https://example.com/repo/edit/main/docs/{path}"; empty: none.
+edit_url = ""
