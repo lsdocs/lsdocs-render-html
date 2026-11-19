@@ -10,12 +10,12 @@
 </head>
 <body>
 {%- block header %}
-<header class="site-header"><a href="{{ page.root }}index.html">{{ site.title or "Home" }}</a></header>
+<header class="lsd-header"><a href="{{ page.root }}index.html">{{ site.title or "Home" }}</a></header>
 {%- endblock %}
-<div class="layout">
+<div class="lsd-layout">
 {%- block nav %}
 {%- if page.nav %}
-<nav class="site-nav" aria-label="Site">
+<nav class="lsd-nav" aria-label="Site">
 <ul>
 {%- for item in page.nav["items"] recursive %}
 <li>
@@ -36,12 +36,12 @@
 {%- endblock %}
 {%- block pager %}
 {%- if page.previous or page.next %}
-<nav class="pager" aria-label="Pages">
+<nav class="lsd-pager" aria-label="Pages">
 {%- if page.previous %}
-<a class="prev" href="{{ page.previous.source | page_url }}">{{ page.previous.title }}</a>
+<a class="lsd-prev" href="{{ page.previous.source | page_url }}">{{ page.previous.title }}</a>
 {%- endif %}
 {%- if page.next %}
-<a class="next" href="{{ page.next.source | page_url }}">{{ page.next.title }}</a>
+<a class="lsd-next" href="{{ page.next.source | page_url }}">{{ page.next.title }}</a>
 {%- endif %}
 </nav>
 {%- endif %}
@@ -49,7 +49,7 @@
 </main>
 {%- block toc %}
 {%- if page.toc %}
-<nav class="page-toc" aria-label="On this page">
+<nav class="lsd-toc-sidebar" aria-label="On this page">
 <p>On this page</p>
 <ul>
 {%- for item in page.toc recursive %}
@@ -65,7 +65,7 @@
 {%- endblock %}
 </div>
 {%- block footer %}
-<footer class="site-footer">Built with lsdocs</footer>
+<footer class="lsd-footer">Built with lsdocs</footer>
 {%- endblock %}
 </body>
 </html>

@@ -83,7 +83,7 @@ dd { margin: 0 0 0.5rem 1.5rem; }
 .page-toc summary { cursor: pointer; list-style: none; padding: 0.25rem 0.75rem;
   background: var(--soft); border: 1px solid var(--border); border-radius: 6px; }
 .page-toc summary::-webkit-details-marker { display: none; }
-.page-toc summary::after { content: " BE"; }
+.page-toc summary::after { content: " \25BE"; }
 .page-toc > ul { position: absolute; right: 0; z-index: 1; min-width: 16rem; max-height: 70vh;
   overflow-y: auto; margin: 0.25rem 0 0; padding: 0.5rem 1rem 0.5rem 1.75rem; background: var(--bg);
   border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }

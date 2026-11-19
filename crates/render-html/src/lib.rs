@@ -535,7 +535,10 @@ mod tests {
             let html = render_with(spec, &root, None, &bare).unwrap();
             assert!(html.contains("<p>Just text.</p>"), "{spec}: {html}");
             assert!(!html.contains("<nav"), "{spec}: {html}");
-            assert!(!html.contains("page-toc"), "{spec}: {html}");
+            assert!(
+                !html.contains("page-toc") && !html.contains("lsd-toc-sidebar"),
+                "{spec}: {html}"
+            );
             assert!(!html.contains("<details"), "{spec}: {html}");
             assert!(!html.contains("importmap"), "{spec}: {html}");
         }
@@ -565,7 +568,7 @@ mod tests {
         assert!(!plain.contains("class=\"prev\""), "{plain}");
         let default = render_with("default", &root, None, &full).unwrap();
         assert!(
-            default.contains("<nav class=\"page-toc\" aria-label=\"On this page\">"),
+            default.contains("<nav class=\"lsd-toc-sidebar\" aria-label=\"On this page\">"),
             "{default}"
         );
         assert!(default.contains("aria-current=\"page\""), "{default}");
