@@ -1,8 +1,10 @@
 //! First-party HTML renderer plugin.
 //!
-//! Renders each document's body to HTML, then places it in a page template
-//! (minijinja). The built-in theme is used unless the plugin's `template`
-//! option names a file, relative to the site directory:
+//! Renders each document's body to HTML, then places it in a theme's page
+//! template (minijinja). Two themes are built in: `default`, the
+//! flagship, and `plain`, one stylesheet with the page's table of
+//! contents as a drop-down menu. A site picks one in the plugin's
+//! settings: for
 //!
 //! ```toml
 //! [[plugins]]
@@ -10,11 +12,27 @@
 //! builtin = "render-html"
 //! ```
 //!
-//! with its settings in `.config/lsdocs/html/settings.toml`:
+//! in `lsdocs.toml`, `.config/lsdocs/html/settings.toml` holds
 //!
 //! ```toml
-//! template = "theme/page.html"
+//! theme = "plain"                     # a built-in theme, or a directory
+//! overrides = "theme-overrides"       # templates and assets replacing the theme's
+//! theme_settings = { footer = "..." } # the theme's settings (its `theme.toml`)
 //! ```
+//!
+//! | Setting | Default | Meaning |
+//! |---|---|---|
+//! | `theme` | `"default"` | A built-in theme's name, else a theme directory, relative to the site directory. |
+//! | `theme_settings` | none | Settings for the theme, each declared (with its default) in the theme's `theme.toml`. |
+//! | `overrides` | none | A directory (relative to the site directory) whose `templates/` and `assets/` are layered on the theme's, file by file. |
+//! | `heading_anchors` | `true` | Add a `#` link to each heading with an id. |
+//! | `sitemap` | `true` | Write `sitemap.xml`. Without an absolute `base_url`, `true` given explicitly is a warning. |
+//!
+//! A theme is a directory of `theme.toml` (its `[settings]`, with their
+//! defaults), `templates/` (with `page.html`, the template each page is
+//! rendered with) and `assets/` (copied to the output). An override's
+//! template can extend the one it replaces as `theme/<path>`
+//! (`{% extends "theme/page.html" %}`) and replace one block.
 //!
 //! Templates see:
 //!
@@ -23,16 +41,34 @@
 //! | `content` | The rendered body (already HTML). |
 //! | `page.title` | `title` front matter, else the first heading, else the source path. |
 //! | `page.source` | The source path, e.g. `guide/intro.md`. |
-//! | `page.metadata` | All front matter. |
+//! | `page.url` | The output path, from the site root, e.g. `guide/intro.html`. |
+//! | `page.metadata` | All metadata (front matter, and what transformers added). |
 //! | `page.root` | Relative path from this page to the site root, e.g. `../`. |
 //! | `page.nav` | Site navigation from `transform-nav`, if it ran (`items`, `prev`, `next`). |
+//! | `page.toc` | The page's sections from `transform-toc`, if any (`[{id, title, level, children}]`). |
+//! | `page.previous`, `page.next` | The neighboring pages in the navigation (`title`, `source`), if any. |
 //! | `site.title`, `site.base_url` | From the site config. |
+//! | `theme` | The theme's settings: its defaults, with `theme_settings` on top. |
+//! | `lsdocs.version` | lsdocs' version. |
+//!
+//! They have the filters `link` (a link to a source file becomes a link to
+//! its output: `{{ item.url | link }}`) and `page_url` (a source path
+//! becomes the relative URL of its output: `{{ item.source | page_url }}`),
+//! and the functions `asset(path)`, the relative URL of the theme's asset
+//! `path` (under `assets/`), and `asset_importmap()`, an import map from
+//! each JavaScript module's unhashed URL to its hashed one, so that a
+//! theme's modules import each other by their plain relative names.
+//!
+//! Assets are written to `_lsdocs/`, each name carrying a hash of the
+//! file's contents (`_lsdocs/js/main.1a2b3c4d.js`), at the
+//! `render/transform/all` request; templates refer to them through
+//! `asset()` only.
 //!
 //! The body's markup is a contract with themes: classes and data
 //! attributes prefixed `lsd-`, listed in `docs/content/reference/html-markup.md`.
 //! `custom:highlight` nodes from `transform-highlight` are written as the
-//! highlighted HTML they carry, in an `lsd-code` figure; the default theme
-//! colors their tokens. Other `custom` nodes are a `div` (or the block
+//! highlighted HTML they carry, in an `lsd-code` figure; the themes color
+//! their tokens. Other `custom` nodes are a `div` (or the block
 //! element their `html_tag` names: `p`, `h1` to `h6`, `section`, `aside`,
 //! `nav`) with their kind, prefixed `lsd-`, as its class (and their `id`
 //! attribute as its id) around their children, or, with the attribute
@@ -43,49 +79,54 @@
 //!
 //! Relative links to other Markdown pages (`guide.md#setup`) are rewritten
 //! to their HTML output (`guide.html#setup`), in the body and through the
-//! `link` filter in templates (`{{ item.url | link }}`).
+//! `link` filter in templates.
 //!
 //! After every page is rendered, the plugin writes `sitemap.xml` (via the
 //! `render/transform/all` request) if the site has an absolute `base_url`. Pages
 //! whose front matter says `sitemap: false` are left out.
-//!
-//! Other settings:
-//!
-//! | Option | Default | Meaning |
-//! |---|---|---|
-//! | `heading_anchors` | `true` | Add a `#` link to each heading with an id. |
-//! | `sitemap` | `true` | Write `sitemap.xml`. Without an absolute `base_url`, `true` given explicitly is a warning. |
 
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
+use lsdocs_plugin_sdk::config::{Kind, recommended, settings_toml_keys};
 use lsdocs_plugin_sdk::doctree::Document;
 use lsdocs_plugin_sdk::protocol::{
-    Diagnostic, OutputFile, RenderParams, RenderResult, RenderTransformAllParams,
+    ConfigInfo, Diagnostic, OutputFile, RenderParams, RenderResult, RenderTransformAllParams,
     RenderTransformAllResult, Severity, SiteInfo,
 };
 use lsdocs_plugin_sdk::{Context, Plugin, PluginError, PluginResult, Renderer, relative_path};
-use minijinja::{Environment, State, Value, context};
+use minijinja::value::Serde;
+use minijinja::{Environment, ErrorKind, State, Value, context};
 
+pub mod assets;
 mod body;
+pub mod theme;
 
+pub use assets::Assets;
 pub use body::{body, escape, link_href, output_path, rewrite_link};
+pub use theme::Theme;
 
-/// The built-in page template.
-pub const DEFAULT_TEMPLATE: &str = include_str!("../theme/page.html");
+/// The theme used unless the settings name another.
+pub const DEFAULT_THEME: &str = "default";
 
+/// The template each page is rendered with.
 const TEMPLATE_NAME: &str = "page.html";
+
+/// A settings value (JSON-like).
+type Json = lsdocs_plugin_sdk::doctree::Value;
 
 /// The plugin, as registered with the host.
 pub fn plugin() -> Plugin {
     Plugin::new("render-html", env!("CARGO_PKG_VERSION"))
         .settings(|c| {
-            lsdocs_plugin_sdk::config::settings_toml_keys(
+            settings_toml_keys(
                 c,
                 &[
-                    ("template", lsdocs_plugin_sdk::config::Kind::String),
-                    ("heading_anchors", lsdocs_plugin_sdk::config::Kind::Bool),
-                    ("sitemap", lsdocs_plugin_sdk::config::Kind::Bool),
+                    ("theme", Kind::String),
+                    ("theme_settings", Kind::Table),
+                    ("overrides", Kind::String),
+                    ("heading_anchors", Kind::Bool),
+                    ("sitemap", Kind::Bool),
                 ],
             )
         })
@@ -93,34 +134,56 @@ pub fn plugin() -> Plugin {
         .cache_key(cache_key)
 }
 
-/// The cache key: a digest of the custom template, if there is one, since
-/// pages depend on it. If it cannot be read, nothing is cached (rendering
+/// The cache key: a digest of the theme with its overrides, since pages
+/// depend on them. If they cannot be loaded, nothing is cached (rendering
 /// will report the error).
 fn cache_key(setup: &lsdocs_plugin_sdk::Setup) -> Option<String> {
-    let init = &setup.params;
-    let Some(path) = setup.settings.get("template").and_then(|t| t.as_str()) else {
-        return Some("built-in template".into());
-    };
-    let full = match &init.site.root {
-        Some(root) => Path::new(root).join(path),
-        None => Path::new(path).to_path_buf(),
-    };
-    let text = std::fs::read(full).ok()?;
-    Some(format!("template {:016x}", fnv1a(&text)))
+    let theme = load_theme(&setup.settings, &setup.params.site).ok()?;
+    Some(format!("theme {}", theme.digest()))
 }
 
-/// The 64-bit FNV-1a hash: small, and the same in every build.
-fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &b| {
-        (hash ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    })
+/// Loads the theme the settings name, with their overrides.
+fn load_theme(settings: &Json, site: &SiteInfo) -> Result<Theme, String> {
+    let root = Path::new(site.root.as_deref().unwrap_or_default());
+    let spec = settings
+        .get("theme")
+        .and_then(|t| t.as_str())
+        .unwrap_or(DEFAULT_THEME);
+    let overrides = settings
+        .get("overrides")
+        .and_then(|o| o.as_str())
+        .map(Path::new);
+    theme::load(spec, root, overrides)
 }
 
-/// The HTML renderer. The template is loaded on first use, since its path
-/// comes from the plugin's settings.
+/// The plugin's settings file, for messages.
+fn settings_file(config: &ConfigInfo) -> String {
+    Path::new(&config.dir)
+        .join(recommended(config, "settings.toml"))
+        .display()
+        .to_string()
+}
+
+/// The HTML renderer. The theme is loaded on first use, since it comes
+/// from the plugin's settings.
 #[derive(Debug, Default)]
 pub struct Html {
-    env: OnceLock<Result<Environment<'static>, String>>,
+    prepared: OnceLock<Result<Prepared, String>>,
+}
+
+impl Html {
+    /// The theme, ready to render with.
+    fn prepared(&self, ctx: &Context) -> PluginResult<&Prepared> {
+        self.prepared
+            .get_or_init(|| {
+                let file = settings_file(ctx.config());
+                let theme =
+                    load_theme(ctx.settings(), ctx.site()).map_err(|e| format!("{file}: {e}"))?;
+                Prepared::new(&theme, ctx.settings().get("theme_settings"), &file)
+            })
+            .as_ref()
+            .map_err(|e| PluginError::new(e.clone()))
+    }
 }
 
 impl Renderer for Html {
@@ -135,36 +198,35 @@ impl Renderer for Html {
         params: RenderTransformAllParams,
         ctx: &Context,
     ) -> PluginResult<RenderTransformAllResult> {
+        let mut result = RenderTransformAllResult {
+            files: self.prepared(ctx)?.files(),
+            diagnostics: vec![],
+        };
         let wanted = ctx.settings().get("sitemap").and_then(|v| v.as_bool());
         if wanted == Some(false) {
-            return Ok(RenderTransformAllResult::default());
+            return Ok(result);
         }
         let base = ctx
             .site()
             .base_url
             .as_deref()
             .filter(|url| url.starts_with("https://") || url.starts_with("http://"));
-        let Some(base) = base else {
-            let mut result = RenderTransformAllResult::default();
-            if wanted == Some(true) {
-                result.diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    message: "the sitemap needs an absolute `base_url` (http:// or https://); \
-                              not writing sitemap.xml"
-                        .into(),
-                    code: Some("sitemap".into()),
-                    ..Diagnostic::default()
-                });
-            }
-            return Ok(result);
-        };
-        Ok(RenderTransformAllResult {
-            files: vec![OutputFile {
+        match base {
+            Some(base) => result.files.push(OutputFile {
                 path: "sitemap.xml".into(),
                 output: sitemap(base, &params).into_bytes(),
-            }],
-            diagnostics: vec![],
-        })
+            }),
+            None if wanted == Some(true) => result.diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                message: "the sitemap needs an absolute `base_url` (http:// or https://); \
+                          not writing sitemap.xml"
+                    .into(),
+                code: Some("sitemap".into()),
+                ..Diagnostic::default()
+            }),
+            None => {}
+        }
+        Ok(result)
     }
 
     async fn render(&self, params: RenderParams, ctx: &Context) -> PluginResult<RenderResult> {
@@ -174,19 +236,11 @@ impl Renderer for Html {
                 params.format
             )));
         }
-        let env = self
-            .env
-            .get_or_init(|| {
-                environment(
-                    ctx.settings().get("template").and_then(|t| t.as_str()),
-                    ctx.site(),
-                )
-            })
-            .as_ref()
-            .map_err(|e| PluginError::new(e.clone()))?;
+        let prepared = self.prepared(ctx)?;
         let options = Options::from_value(ctx.settings());
         Ok(RenderResult {
-            output: render_page(env, &params.document, ctx.site(), &options)?.into_bytes(),
+            output: render_page(prepared.env(), &params.document, ctx.site(), &options)?
+                .into_bytes(),
             extension: "html".into(),
             diagnostics: vec![],
         })
@@ -211,7 +265,7 @@ impl Default for Options {
 impl Options {
     /// Reads the options from the plugin's settings; missing or
     /// mistyped ones keep their defaults.
-    pub fn from_value(value: &lsdocs_plugin_sdk::doctree::Value) -> Self {
+    pub fn from_value(value: &Json) -> Self {
         let defaults = Self::default();
         Self {
             heading_anchors: value
@@ -222,38 +276,81 @@ impl Options {
     }
 }
 
-/// Builds the template environment from the built-in template, or from
-/// `template` (relative to the site root) if given.
-fn environment(template: Option<&str>, site: &SiteInfo) -> Result<Environment<'static>, String> {
-    let source = match template {
-        None => DEFAULT_TEMPLATE.to_owned(),
-        Some(path) => {
-            let full = match &site.root {
-                Some(root) => Path::new(root).join(path),
-                None => Path::new(path).to_path_buf(),
-            };
-            std::fs::read_to_string(&full)
-                .map_err(|e| format!("failed to read template {}: {e}", full.display()))?
+/// A theme ready to render with: its templates in an environment that
+/// holds its settings, and its assets.
+#[derive(Debug)]
+pub struct Prepared {
+    env: Environment<'static>,
+    assets: Arc<Assets>,
+}
+
+impl Prepared {
+    /// Prepares `theme` with the site's settings for it (`theme_settings`,
+    /// checked against the theme's; they are in `file`, for messages).
+    pub fn new(theme: &Theme, theme_settings: Option<&Json>, file: &str) -> Result<Self, String> {
+        let values = theme::settings(&theme.settings, theme_settings, file)?;
+        let assets = Arc::new(Assets::new(&theme.assets));
+        let mut env = Environment::new();
+        // Escaped here, not by minijinja, which would also escape every `/`.
+        env.add_filter("link", |url: String| {
+            Value::from_safe_string(escape(&rewrite_link(&url)))
+        });
+        // The URL of a document's output, by its source path, relative to the
+        // page being rendered.
+        env.add_filter("page_url", |state: &State, source: String| {
+            Value::from_safe_string(escape(&relative_path(
+                &page_source(state),
+                &output_path(&source),
+            )))
+        });
+        let urls = Arc::clone(&assets);
+        env.add_function(
+            "asset",
+            move |state: &State, path: String| -> Result<Value, minijinja::Error> {
+                match urls.url(&page_source(state), &path) {
+                    Some(url) => Ok(Value::from_safe_string(escape(&url))),
+                    None => Err(minijinja::Error::new(
+                        ErrorKind::InvalidOperation,
+                        format!("the theme has no asset `{path}`"),
+                    )),
+                }
+            },
+        );
+        let maps = Arc::clone(&assets);
+        env.add_function("asset_importmap", move |state: &State| {
+            Value::from_safe_string(
+                maps.importmap(&page_source(state))
+                    .map(|map| format!("<script type=\"importmap\">{map}</script>"))
+                    .unwrap_or_default(),
+            )
+        });
+        env.add_global("theme", Value::from(Serde(&values)));
+        env.add_global("lsdocs", context! { version => env!("CARGO_PKG_VERSION") });
+        for (name, source) in &theme.templates {
+            env.add_template_owned(name.clone(), source.clone())
+                .map_err(|e| format!("theme `{}`: invalid template {name}: {e}", theme.name))?;
         }
-    };
-    let mut env = Environment::new();
-    // Escaped here, not by minijinja, which would also escape every `/`.
-    env.add_filter("link", |url: String| {
-        Value::from_safe_string(escape(&rewrite_link(&url)))
-    });
-    // The URL of a document's output, by its source path, relative to the
-    // page being rendered.
-    env.add_filter("page_url", |state: &State, source: String| {
-        let from = state
-            .lookup("page")
-            .and_then(|page| page.get_attr("source").ok())
-            .and_then(|s| s.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        Value::from_safe_string(escape(&relative_path(&from, &output_path(&source))))
-    });
-    env.add_template_owned(TEMPLATE_NAME, source)
-        .map_err(|e| format!("invalid template: {e}"))?;
-    Ok(env)
+        Ok(Self { env, assets })
+    }
+
+    /// The template environment.
+    pub fn env(&self) -> &Environment<'static> {
+        &self.env
+    }
+
+    /// The asset files to write.
+    pub fn files(&self) -> Vec<OutputFile> {
+        self.assets.files()
+    }
+}
+
+/// The source path of the page being rendered (empty outside a page).
+fn page_source(state: &State) -> String {
+    state
+        .lookup("page")
+        .and_then(|page| page.get_attr("source").ok())
+        .and_then(|s| s.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 /// Renders a full page with the given template environment.
@@ -264,13 +361,24 @@ pub fn render_page(
     options: &Options,
 ) -> Result<String, minijinja::Error> {
     let depth = doc.source.matches('/').count();
+    let nav = doc.metadata.get("nav");
+    let neighbor = |key: &str| {
+        nav.and_then(|nav| nav.get(key))
+            .filter(|page| page.is_object())
+            .map(|page| Value::from(Serde(page)))
+    };
     env.get_template(TEMPLATE_NAME)?.render(context! {
         content => Value::from_safe_string(body(doc, options)),
         page => context! {
             title => doc.title().unwrap_or_else(|| doc.source.clone()),
             source => &doc.source,
-            metadata => Value::from(minijinja::value::Serde(&doc.metadata)),
-            nav => doc.metadata.get("nav").map(|nav| Value::from(minijinja::value::Serde(nav))),
+            // Escaped here: minijinja would also escape every `/`.
+            url => Value::from_safe_string(escape(&output_path(&doc.source))),
+            metadata => Value::from(Serde(&doc.metadata)),
+            nav => nav.map(|nav| Value::from(Serde(nav))),
+            toc => doc.metadata.get("toc").map(|toc| Value::from(Serde(toc))),
+            previous => neighbor("prev"),
+            next => neighbor("next"),
             // Only ever `../` repeated, so it needs no escaping.
             root => Value::from_safe_string("../".repeat(depth)),
         },
@@ -281,10 +389,11 @@ pub fn render_page(
     })
 }
 
-/// Renders a page with the built-in template and default options.
+/// Renders a page with the built-in default theme and default options.
 pub fn page(doc: &Document, site: &SiteInfo) -> Result<String, String> {
-    let env = environment(None, site)?;
-    render_page(&env, doc, site, &Options::default()).map_err(|e| e.to_string())
+    let theme = theme::load(DEFAULT_THEME, Path::new(""), None)?;
+    let prepared = Prepared::new(&theme, None, "settings")?;
+    render_page(prepared.env(), doc, site, &Options::default()).map_err(|e| e.to_string())
 }
 
 /// A sitemap (sitemaps.org protocol) of the rendered pages, with URLs under
@@ -332,6 +441,8 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use lsdocs_plugin_sdk::doctree::{Heading, Link, Node, Paragraph, text};
+    use lsdocs_plugin_sdk::protocol::InitializeParams;
+    use std::path::PathBuf;
 
     fn site() -> SiteInfo {
         SiteInfo {
@@ -364,6 +475,31 @@ mod tests {
         doc
     }
 
+    fn temp(label: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("lsdocs-render-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write(path: &Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    /// Renders `doc` with the theme `spec` (and overrides) under `root`.
+    fn render_with(
+        spec: &str,
+        root: &Path,
+        overrides: Option<&str>,
+        doc: &Document,
+    ) -> Result<String, String> {
+        let theme = theme::load(spec, root, overrides.map(Path::new))?;
+        let prepared = Prepared::new(&theme, None, "settings.toml")?;
+        render_page(prepared.env(), doc, &site(), &Options::default()).map_err(|e| e.to_string())
+    }
+
     #[test]
     fn renders_a_page_and_escapes() {
         let html = page(&doc("a.md"), &site()).unwrap();
@@ -388,24 +524,181 @@ mod tests {
     }
 
     #[test]
-    fn custom_templates_are_loaded_from_the_site_root() {
-        let dir = std::env::temp_dir().join(format!("lsdocs-render-html-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("theme")).unwrap();
-        std::fs::write(
-            dir.join("theme/page.html"),
-            "[{{ page.title }}]{{ content }}",
-        )
-        .unwrap();
-        let site = SiteInfo {
-            root: Some(dir.to_string_lossy().into_owned()),
-            ..site()
+    fn renders_a_bare_page() {
+        let mut bare = Document::new("a.md");
+        bare.children = vec![Node::Paragraph(Paragraph {
+            children: vec![text("Just text.")],
+            ..Paragraph::default()
+        })];
+        let root = temp("bare");
+        for spec in ["default", "plain"] {
+            let html = render_with(spec, &root, None, &bare).unwrap();
+            assert!(html.contains("<p>Just text.</p>"), "{spec}: {html}");
+            assert!(!html.contains("<nav"), "{spec}: {html}");
+            assert!(!html.contains("page-toc"), "{spec}: {html}");
+            assert!(!html.contains("<details"), "{spec}: {html}");
+            assert!(!html.contains("importmap"), "{spec}: {html}");
+        }
+        // With a toc and nav, the same templates show them.
+        let mut full = bare.clone();
+        full.metadata.insert(
+            "toc".into(),
+            serde_json::json!([{"id": "a", "title": "A", "level": 2, "children": [
+                {"id": "b", "title": "B <i>", "level": 3, "children": []}
+            ]}]),
+        );
+        full.metadata.insert(
+            "nav".into(),
+            serde_json::json!({
+                "items": [{"title": "Home", "url": "a.md", "source": "a.md", "current": true}],
+                "prev": null,
+                "next": {"title": "Next", "url": "b.md", "source": "b.md"},
+            }),
+        );
+        let plain = render_with("plain", &root, None, &full).unwrap();
+        assert!(plain.contains("<details class=\"page-toc\">"), "{plain}");
+        assert!(plain.contains("<a href=\"#b\">B &lt;i&gt;</a>"), "{plain}");
+        assert!(
+            plain.contains("<a class=\"next\" href=\"b.html\">Next &rarr;</a>"),
+            "{plain}"
+        );
+        assert!(!plain.contains("class=\"prev\""), "{plain}");
+        let default = render_with("default", &root, None, &full).unwrap();
+        assert!(
+            default.contains("<nav class=\"page-toc\" aria-label=\"On this page\">"),
+            "{default}"
+        );
+        assert!(default.contains("aria-current=\"page\""), "{default}");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn overrides_replace_one_block() {
+        let root = temp("override");
+        write(
+            &root.join("over/templates/page.html"),
+            "{% extends \"theme/page.html\" %}\
+             {% block footer %}<footer>Mine</footer>{% endblock %}",
+        );
+        for spec in ["default", "plain"] {
+            let html = render_with(spec, &root, Some("over"), &doc("a.md")).unwrap();
+            assert!(html.contains("<footer>Mine</footer>"), "{spec}: {html}");
+            assert!(!html.contains("Built with lsdocs"), "{spec}: {html}");
+            assert!(
+                html.contains("<a href=\"index.html\">Site</a></header>"),
+                "{spec}: {html}"
+            );
+            assert!(html.contains("<p>&lt;script&gt; "), "{spec}: {html}");
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn theme_settings_are_validated() {
+        let root = temp("settings");
+        let config = root.join(".config");
+        write(
+            &config.join("lsdocs/html/settings.toml"),
+            "theme = \"mine\"\ntheme_settings = { colour = \"x\" }\n",
+        );
+        write(
+            &root.join("mine/theme.toml"),
+            "[settings]\ncolor = \"red\"\n",
+        );
+        write(
+            &root.join("mine/templates/page.html"),
+            "{{ theme.color }} {{ lsdocs.version }} {{ page.url }}",
+        );
+        let plugin = plugin();
+        let setup = lsdocs_plugin_sdk::testing::setup(
+            &plugin,
+            InitializeParams {
+                site: SiteInfo {
+                    root: Some(root.to_string_lossy().into_owned()),
+                    ..SiteInfo::default()
+                },
+                config: ConfigInfo {
+                    dir: config.to_string_lossy().into_owned(),
+                    name: "html".into(),
+                },
+                ..InitializeParams::default()
+            },
+        );
+        let ctx = lsdocs_plugin_sdk::testing::context(&setup);
+        let params = RenderParams {
+            document: doc("a.md"),
+            format: "html".into(),
         };
-        let env = environment(Some("theme/page.html"), &site).unwrap();
-        let html = render_page(&env, &doc("a.md"), &site, &Options::default()).unwrap();
-        assert!(html.starts_with("[Tom &amp; Jerry]<h1 id=\"t\">"), "{html}");
-        let missing = environment(Some("theme/missing.html"), &site).unwrap_err();
-        assert!(missing.starts_with("failed to read template"), "{missing}");
-        std::fs::remove_dir_all(&dir).unwrap();
+        let err = Html::default()
+            .render(params, &ctx)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`colour`"), "{err}");
+        assert!(err.contains("settings.toml"), "{err}");
+
+        let theme = theme::load("mine", &root, None).unwrap();
+        let good = Prepared::new(&theme, Some(&serde_json::json!({"color": "blue"})), "f").unwrap();
+        let out =
+            render_page(good.env(), &doc("guide/a.md"), &site(), &Options::default()).unwrap();
+        assert_eq!(
+            out,
+            format!("blue {} guide/a.html", env!("CARGO_PKG_VERSION"))
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn asset_urls_are_relative() {
+        let root = temp("assets");
+        write(&root.join("t/theme.toml"), "");
+        write(
+            &root.join("t/templates/page.html"),
+            "{{ asset('main.css') }}|{{ asset_importmap() }}",
+        );
+        write(&root.join("t/assets/main.css"), "body {}");
+        let hash = &blake3::hash(b"body {}").to_hex()[..8];
+        let nested = render_with("t", &root, None, &doc("guide/a.md")).unwrap();
+        assert_eq!(nested, format!("../_lsdocs/main.{hash}.css|"));
+        let top = render_with("t", &root, None, &doc("a.md")).unwrap();
+        assert_eq!(top, format!("_lsdocs/main.{hash}.css|"));
+
+        write(
+            &root.join("t/templates/page.html"),
+            "{{ asset('nope.css') }}",
+        );
+        let err = render_with("t", &root, None, &doc("a.md")).unwrap_err();
+        assert!(err.contains("`nope.css`"), "{err}");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn modules_get_an_import_map() {
+        let root = temp("importmap");
+        write(&root.join("t/theme.toml"), "");
+        write(
+            &root.join("t/templates/page.html"),
+            "{{ asset_importmap() }}",
+        );
+        write(&root.join("t/assets/js/main.js"), "import './state.js';");
+        write(&root.join("t/assets/js/state.js"), "export {};");
+        let main = assets::hashed_path("js/main.js", b"import './state.js';");
+        let state = assets::hashed_path("js/state.js", b"export {};");
+        let html = render_with("t", &root, None, &doc("guide/a.md")).unwrap();
+        let json = html
+            .strip_prefix("<script type=\"importmap\">")
+            .and_then(|rest| rest.strip_suffix("</script>"))
+            .unwrap();
+        let map: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            map["imports"]["../_lsdocs/js/main.js"],
+            format!("../{main}")
+        );
+        assert_eq!(
+            map["imports"]["../_lsdocs/js/state.js"],
+            format!("../{state}")
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -440,8 +733,10 @@ mod tests {
 
     #[test]
     fn templates_can_rewrite_links() {
-        let env = environment(None, &site()).unwrap();
-        let out = env
+        let theme = theme::load(DEFAULT_THEME, Path::new(""), None).unwrap();
+        let prepared = Prepared::new(&theme, None, "f").unwrap();
+        let out = prepared
+            .env()
             .render_str(
                 "{{ 'a/b.md#x' | link }} {{ 'https://x.org/y.md?a&b' | link }}",
                 (),
@@ -451,10 +746,8 @@ mod tests {
     }
 
     #[test]
-    fn cache_key_follows_the_template() {
-        use lsdocs_plugin_sdk::protocol::InitializeParams;
-        let dir = std::env::temp_dir().join(format!("lsdocs-render-key-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    fn cache_key_follows_the_theme() {
+        let dir = temp("key");
         let init = |options: serde_json::Value| {
             lsdocs_plugin_sdk::Setup::with_settings(
                 InitializeParams {
@@ -467,16 +760,49 @@ mod tests {
                 options,
             )
         };
-        let custom = init(serde_json::json!({"template": "t.html"}));
+        let custom = init(serde_json::json!({"theme": "t"}));
         assert_eq!(cache_key(&custom), None, "unreadable: no caching");
-        std::fs::write(dir.join("t.html"), "a").unwrap();
+        write(&dir.join("t/theme.toml"), "");
+        write(&dir.join("t/templates/page.html"), "a");
         let first = cache_key(&custom).unwrap();
-        std::fs::write(dir.join("t.html"), "b").unwrap();
-        assert_ne!(cache_key(&custom).unwrap(), first);
-        assert_eq!(
-            cache_key(&init(serde_json::Value::Null)).as_deref(),
-            Some("built-in template")
+        write(&dir.join("t/templates/page.html"), "b");
+        let second = cache_key(&custom).unwrap();
+        assert_ne!(second, first);
+        write(&dir.join("t/assets/x.css"), "b");
+        assert_ne!(cache_key(&custom).unwrap(), second);
+        let overridden = init(serde_json::json!({"theme": "t", "overrides": "o"}));
+        assert_eq!(cache_key(&overridden), None, "missing overrides");
+        let built_in = cache_key(&init(serde_json::Value::Null)).unwrap();
+        assert_eq!(cache_key(&init(serde_json::Value::Null)).unwrap(), built_in);
+        assert_ne!(
+            cache_key(&init(serde_json::json!({"theme": "plain"}))).unwrap(),
+            built_in
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn render_all_writes_the_assets() {
+        let setup = lsdocs_plugin_sdk::Setup::with_settings(
+            InitializeParams::default(),
+            serde_json::json!({"theme": "plain", "sitemap": false}),
+        );
+        let ctx = lsdocs_plugin_sdk::testing::context(&setup);
+        let result = Html::default()
+            .render_all(
+                RenderTransformAllParams {
+                    format: "html".into(),
+                    pages: vec![],
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+        let paths: Vec<_> = result.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths.len(), 1, "{paths:?}");
+        assert!(
+            paths[0].starts_with("_lsdocs/plain.") && paths[0].ends_with(".css"),
+            "{paths:?}"
+        );
     }
 }

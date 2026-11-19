@@ -1,0 +1,5 @@
+# The `default` theme, lsdocs' flagship. Its settings and their defaults
+# go under `[settings]`; a site sets them in render-html's
+# `theme_settings`.
+
+[settings]

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{% if site.title and site.title != page.title %}{{ page.title }} | {{ site.title }}{% else %}{{ page.title }}{% endif %}{% endblock %}</title>
+<link rel="stylesheet" href="{{ asset('plain.css') }}">
+{%- block head %}{% endblock %}
+</head>
+<body{% if page.nav %} class="has-nav"{% endif %}>
+{%- block header %}
+<header><a href="{{ page.root }}index.html">{{ site.title or "Home" }}</a></header>
+{%- endblock %}
+<div class="layout">
+{%- block nav %}
+{%- if page.nav %}
+<nav class="site-nav" aria-label="Site">
+<ul>
+{%- for item in page.nav["items"] recursive %}
+<li>
+{%- if item.source %}<a href="{{ item.source | page_url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.title }}</a>
+{%- else %}<span>{{ item.title }}</span>{% endif %}
+{%- if item.children %}
+<ul>{{ loop(item.children) }}
+</ul>
+{%- endif %}</li>
+{%- endfor %}
+</ul>
+</nav>
+{%- endif %}
+{%- endblock %}
+<main>
+{%- block content %}
+{{ content }}
+{%- endblock %}
+{%- block pager %}
+{%- if page.previous or page.next %}
+<nav class="pager" aria-label="Pages">
+{%- if page.previous %}
+<a class="prev" href="{{ page.previous.source | page_url }}">&larr; {{ page.previous.title }}</a>
+{%- endif %}
+{%- if page.next %}
+<a class="next" href="{{ page.next.source | page_url }}">{{ page.next.title }} &rarr;</a>
+{%- endif %}
+</nav>
+{%- endif %}
+{%- endblock %}
+</main>
+</div>
+{%- block footer %}
+<footer>Built with lsdocs</footer>
+{%- endblock %}
+</body>
+</html>

@@ -11,6 +11,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 lsdocs-plugin-sdk.workspace = true
 minijinja.workspace = true
 serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
