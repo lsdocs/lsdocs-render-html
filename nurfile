@@ -81,11 +81,121 @@ def "nur bump" [crate?: string] {
     if $crate == null { cargo-org update } else { cargo-org update -p $crate }
 }
 
+# Environment for running Node.js through fnm when `node` is not already on
+# PATH (non-interactive shells usually skip `fnm env`).
+def node-env []: nothing -> record {
+    if (which node | is-not-empty) { return {} }
+    let fnm = which fnm | get -o 0.path | default (
+        $nu.home-dir | path join .local share fnm fnm
+    )
+    if not ($fnm | path exists) and (which fnm | is-empty) {
+        error make --unspanned {msg: "Node.js not found: install it, or fnm (https://github.com/Schniz/fnm)"}
+    }
+    let vars = ^$fnm env --json | from json
+    let bin = if $nu.os-info.name == "windows" {
+        $vars.FNM_MULTISHELL_PATH
+    } else {
+        $vars.FNM_MULTISHELL_PATH | path join bin
+    }
+    # Joined explicitly: nur does not convert list-valued PATH for children.
+    $vars | insert PATH ($env.PATH | prepend $bin | str join (char esep))
+}
+
+# Installs a Node package's dependencies, again whenever the platform
+# changes: node_modules holds platform-specific packages, and the checkout
+# may be shared between platforms (e.g. Windows and WSL).
+def npm-install []: nothing -> nothing {
+    let marker = "node_modules/.lsdocs-platform"
+    let platform = $"($nu.os-info.name)-($nu.os-info.arch)"
+    if not ($marker | path exists) or (open --raw $marker | str trim) != $platform {
+        npm ci --no-fund --no-audit --loglevel=error
+        $platform | save --force $marker
+    }
+}
+
+# The default theme: its TypeScript sources (an npm package for TypeScript
+# and the signals library, never shipped) and its compiled modules, which
+# are checked in so building a site needs no Node.js.
+const THEME = "crates/render-html/themes/default"
+
+# The vendored signals library: from node_modules (the version
+# package.json pins) to src/vendor, without its source map comment (the
+# map is not shipped).
+def theme-vendor [src: string, vendor: string]: nothing -> nothing {
+    let pkg = $src | path join node_modules @preact signals-core
+    mkdir $vendor
+    open --raw ($pkg | path join dist signals-core.mjs)
+    | str replace --regex '//# sourceMappingURL=\S*\s*$' ''
+    | save --raw --force ($vendor | path join signals-core.mjs)
+    cp --force ($pkg | path join dist signals-core.d.ts) ($vendor | path join signals-core.d.mts)
+    cp --force ($pkg | path join LICENSE) ($vendor | path join LICENSE)
+}
+
+# Compile the theme's TypeScript (run from src/, Node.js on PATH) into
+# `out`, a fresh directory, beside the vendored modules and their license.
+def theme-compile [src: string, out: string]: nothing -> nothing {
+    rm --recursive --force $out
+    node ($src | path join node_modules typescript bin tsc) --project $src --outDir $out
+    mkdir ($out | path join vendor)
+    cp --force ($src | path join vendor signals-core.mjs) ($out | path join vendor signals-core.mjs)
+    cp --force ($src | path join vendor LICENSE) ($out | path join vendor LICENSE.txt)
+}
+
+# A directory's files, by path relative to it, with their contents' hash.
+def dir-digest [dir: string]: nothing -> table {
+    if not ($dir | path exists) { return [] }
+    glob --no-dir ($dir | path join "**" "*" | str replace --all '\' '/')
+    | each {|f| {path: ($f | path relative-to $dir | str replace --all '\' '/'), hash: (open --raw $f | hash sha256)} }
+    | sort-by path
+}
+
+# Regenerate the default theme's scripts (its assets/js/, and the vendored
+# signals library in src/vendor/) from its TypeScript sources (needs
+# Node.js, or fnm). Review the diff.
+def "nur gen theme" [] {
+    let src = $env.PWD | path join $THEME src
+    cd $src
+    with-env (node-env) {
+        npm-install
+        theme-vendor $src ($src | path join vendor)
+        theme-compile $src ($env.PWD | path join .. assets js)
+    }
+}
+
+# Type-check and compile the default theme's TypeScript, fail if the
+# checked-in scripts (or the vendored library) are stale, and run the
+# theme's tests (needs Node.js, or fnm).
+def "nur test theme" [] {
+    let root = $env.PWD
+    let src = $root | path join $THEME src
+    let assets = $root | path join $THEME assets js
+    let check = cargo metadata --format-version 1 --no-deps | from json | get target_directory | path join theme-check
+    cd $src
+    with-env (node-env) {
+        npm-install
+        theme-vendor $src ($check | path join vendor)
+        if (dir-digest ($check | path join vendor)) != (dir-digest ($src | path join vendor)) {
+            error make --unspanned {msg: $"($THEME)/src/vendor is stale: run `nur gen theme`"}
+        }
+        theme-compile $src ($check | path join js)
+        if (dir-digest ($check | path join js)) != (dir-digest $assets) {
+            error make --unspanned {msg: $"($THEME)/assets/js is stale: run `nur gen theme`"}
+        }
+        cd ($root | path join $THEME)
+        # Node.js warns that its localStorage needs a file: the tests check
+        # the theme copes without one.
+        node --disable-warning=ExperimentalWarning --test test/
+    }
+}
+
+# Decode every MessagePack fixture with nushell and compare to its JSON twin.
+
 # What CI runs.
 def "nur ci" [] {
     nur fmt --check
     nur lint
     nur test
+    nur test theme
     nur check-dupes
     nur check-git-deps
 }

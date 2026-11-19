@@ -16,9 +16,12 @@ publish = false
 
 [workspace.dependencies]
 lsdocs-plugin-sdk = { git = "https://github.com/lsdocs/lsdocs-plugin-sdk", branch = "main", version = "0.1.0" }
+# For the snapshot test (tests/site.rs).
+lsdocs-parser-markdown = { git = "https://github.com/lsdocs/lsdocs-markdown", branch = "main", version = "0.1.0" }
 
 # Third-party crates.
 blake3 = { version = "1.8.7", default-features = false, features = ["std", "pure"] }
+insta = "1.49.0"
 minijinja = { version = "3.1.0", features = ["json", "serde"] }
 serde_json = "1.0.154"
 tokio = { version = "1.54.1", default-features = false }

@@ -1,0 +1,45 @@
+---
+source: crates/render-html/tests/site.rs
+expression: html
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup | Test site</title>
+<link rel="stylesheet" href="../_lsdocs/plain.7d73ecca.css">
+</head>
+<body class="has-nav">
+<header><a href="../index.html">Test site</a></header>
+<div class="layout">
+<nav class="site-nav" aria-label="Site">
+<ul>
+<li><a href="../index.html">Test site</a></li>
+<li><span>Guide</span>
+<ul>
+<li><a href="setup.html" aria-current="page">Setup</a></li>
+</ul></li>
+</ul>
+</nav>
+<main>
+<section id="setup">
+<h1>Setup <a class="lsd-anchor" href="#setup" aria-label="Link to this section">#</a></h1>
+<p>A page in a subfolder, so asset and page links are relative.</p>
+<section id="install">
+<h2>Install <a class="lsd-anchor" href="#install" aria-label="Link to this section">#</a></h2>
+<dl class="lsd-definition-list">
+<dt>Term</dt>
+<dd>Its definition.</dd>
+</dl>
+</section>
+</section>
+
+<nav class="pager" aria-label="Pages">
+<a class="prev" href="../index.html">&larr; Test site</a>
+</nav>
+</main>
+</div>
+<footer>Built with lsdocs</footer>
+</body>
+</html>

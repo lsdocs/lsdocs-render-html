@@ -1,0 +1,82 @@
+---
+source: crates/render-html/tests/site.rs
+expression: html
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test site</title>
+<link rel="stylesheet" href="_lsdocs/plain.7d73ecca.css">
+</head>
+<body class="has-nav">
+<header><a href="index.html">Test site</a></header>
+<div class="layout">
+<nav class="site-nav" aria-label="Site">
+<ul>
+<li><a href="index.html" aria-current="page">Test site</a></li>
+<li><span>Guide</span>
+<ul>
+<li><a href="guide/setup.html">Setup</a></li>
+</ul></li>
+</ul>
+</nav>
+<main>
+<details class="page-toc">
+<summary>On this page</summary>
+<ul>
+<li><a href="#code">Code</a>
+<ul>
+<li><a href="#deeper">Deeper</a></li>
+</ul></li>
+</ul>
+</details>
+<section id="test-site">
+<h1>Test site <a class="lsd-anchor" href="#test-site" aria-label="Link to this section">#</a></h1>
+<p>A page with the markup render-html writes: <em>emphasis</em>, <code>code</code>, a
+<a href="guide/setup.html">link</a> and a footnote<sup class="lsd-footnote-ref"><a href="#fn-1" id="fnref-1">1</a></sup>.</p>
+<div class="lsd-admonition" data-kind="note">
+<p class="lsd-admonition-title">Note</p>
+<p>An admonition, with a title from its kind.</p>
+</div>
+<section id="code">
+<h2>Code <a class="lsd-anchor" href="#code" aria-label="Link to this section">#</a></h2>
+<lsd-copy><figure class="lsd-code" data-language="rust"><pre><code class="language-rust">fn main() {
+    println!(&quot;hello&quot;);
+}
+</code></pre></figure></lsd-copy>
+<section id="deeper">
+<h3>Deeper <a class="lsd-anchor" href="#deeper" aria-label="Link to this section">#</a></h3>
+<div class="lsd-table">
+<table>
+<tr><th>Name</th><th>Value</th></tr>
+<tr><td>a</td><td>1</td></tr>
+</table>
+</div>
+<div class="lsd-footnotes" role="doc-endnotes">
+<div class="lsd-footnote" id="fn-1">
+<p class="lsd-footnote-label"><a href="#fnref-1">1</a></p>
+<p>The footnote.</p>
+</div>
+</div>
+</section>
+</section>
+</section>
+<lsd-tabs class="lsd-tabs">
+<div class="lsd-tab" data-label="Rust" role="group" aria-label="Rust">
+<p>cargo build</p>
+</div>
+<div class="lsd-tab" data-label="Python" role="group" aria-label="Python">
+<p>uv sync</p>
+</div>
+</lsd-tabs>
+
+<nav class="pager" aria-label="Pages">
+<a class="next" href="guide/setup.html">Setup &rarr;</a>
+</nav>
+</main>
+</div>
+<footer>Built with lsdocs</footer>
+</body>
+</html>
