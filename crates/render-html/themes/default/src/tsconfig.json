@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "rootDir": ".",
+    "outDir": "../assets/js",
+    "newLine": "lf",
+    "removeComments": false
+  },
+  "include": ["*.ts", "vendor/*.d.mts"]
+}

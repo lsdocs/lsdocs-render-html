@@ -36,6 +36,15 @@
     "edit": "Edit this page",
     "built": "Built with",
     "home": "Home",
+    "js": {
+      "copy": "Copy to clipboard",
+      "copied": "Copied to clipboard",
+      "copy_failed": "Copy failed",
+      "scheme": "Color scheme",
+      "scheme_auto": "System",
+      "scheme_light": "Light",
+      "scheme_dark": "Dark",
+    },
   },
 } -%}
 {%- set t = labels[theme.language] or labels["en"] -%}
@@ -57,8 +66,11 @@
 <link rel="stylesheet" href="{{ css | url }}">
 {%- endfor %}
 {%- block head %}{% endblock %}
+<script type="application/json" id="lsd-labels">{{ t.js | tojson }}</script>
 {{ asset_importmap() }}
-{%- block scripts %}{% endblock %}
+{%- block scripts %}
+<script type="module" src="{{ asset('js/main.js') }}"></script>
+{%- endblock %}
 {%- for js in theme.extra_js %}
 <script src="{{ js | url }}" defer></script>
 {%- endfor %}

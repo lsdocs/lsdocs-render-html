@@ -572,7 +572,12 @@ mod tests {
                 "{spec}: {html}"
             );
             assert!(!html.contains("<details"), "{spec}: {html}");
-            assert!(!html.contains("importmap"), "{spec}: {html}");
+            // Only the default theme has scripts.
+            assert_eq!(
+                html.contains("importmap"),
+                spec == "default",
+                "{spec}: {html}"
+            );
             assert!(!html.contains("lsd-drawer"), "{spec}: {html}");
         }
         // With a toc and nav, the same templates show them.

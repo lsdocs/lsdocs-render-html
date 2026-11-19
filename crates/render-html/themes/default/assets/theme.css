@@ -79,6 +79,23 @@
   }
   /* Slots for the theme's scripts: nothing shows without them. */
   :is(lsd-search, lsd-palette):not(:defined) { display: none; }
+  .lsd-palette-button {
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    color: inherit;
+    background: none;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+
+    &:hover { background: rgb(255 255 255 / 0.12); }
+    &:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+  }
+  /* The table of contents' element only adds behavior. */
+  lsd-toc { display: contents; }
 
   /* The drawer's switch: a checkbox, visually hidden, and its label in the
      header. Where the label is hidden, so is the checkbox, which then

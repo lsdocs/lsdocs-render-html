@@ -1,0 +1,11 @@
+{
+  "name": "lsdocs-theme-default",
+  "private": true,
+  "description": "The default theme's scripts (TypeScript), compiled into ../assets/js by `nur gen theme`.",
+  "license": "Apache-2.0 OR MIT",
+  "type": "module",
+  "devDependencies": {
+    "@preact/signals-core": "1.14.5",
+    "typescript": "6.0.3"
+  }
+}
