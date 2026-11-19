@@ -2,8 +2,8 @@
 
 lsdocs' HTML renderer: it writes each page with a theme, the theme's
 assets, a search index for themes that ask for one, and `sitemap.xml`.
-Using themes is covered by "Themes" in the documentation site
-(`docs/content/guide/themes.md`); this file is about working on the
+Using themes is covered by "Themes" in the lsdocs documentation
+(https://lsdocs.github.io); this file is about working on the
 built-in themes.
 
 ## Layout
