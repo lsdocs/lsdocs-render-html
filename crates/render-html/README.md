@@ -37,7 +37,8 @@ The `default` theme's look follows
 [zensical-ui](https://github.com/zensical/ui) (MIT licensed): its colors,
 layout and components. We took the look, not the code: the templates,
 CSS and scripts are our own. Its markup targets the `lsd-` contract that
-every parser's output is rendered to (`docs/content/reference/html-markup.md`).
+every parser's output is rendered to ("HTML markup" in the lsdocs
+documentation, https://lsdocs.github.io).
 
 ## Browser baseline
 
