@@ -81,13 +81,15 @@
   :is(lsd-search, lsd-palette):not(:defined) { display: none; }
 
   /* The drawer's switch: a checkbox, visually hidden, and its label in the
-     header. */
+     header. Where the label is hidden, so is the checkbox, which then
+     takes no focus. */
   .lsd-drawer-toggle {
     position: fixed;
     width: 1px;
     height: 1px;
     opacity: 0;
     pointer-events: none;
+    visibility: hidden;
   }
   .lsd-drawer-button {
     display: none;
@@ -263,7 +265,9 @@
       grid-template-areas: "main toc";
     }
     .lsd-drawer-button { display: grid; }
+    .lsd-drawer-toggle { visibility: visible; }
     body:not(:has(.lsd-nav)) .lsd-drawer-button { display: none; }
+    body:not(:has(.lsd-nav)) .lsd-drawer-toggle { visibility: hidden; }
     .lsd-nav {
       position: fixed;
       inset: 0 auto 0 0;
@@ -309,6 +313,7 @@
       grid-template-areas: "main";
     }
     body:not(:has(.lsd-nav)) .lsd-drawer-button { display: grid; }
+    body:not(:has(.lsd-nav)) .lsd-drawer-toggle { visibility: visible; }
     .lsd-drawer {
       display: block;
       position: fixed;

@@ -573,6 +573,7 @@ mod tests {
             );
             assert!(!html.contains("<details"), "{spec}: {html}");
             assert!(!html.contains("importmap"), "{spec}: {html}");
+            assert!(!html.contains("lsd-drawer"), "{spec}: {html}");
         }
         // With a toc and nav, the same templates show them.
         let mut full = bare.clone();
@@ -959,6 +960,27 @@ mod tests {
                 assert!(!text.contains(request), "{path}: {request}");
             }
         }
+    }
+
+    #[test]
+    fn the_drawer_switch_takes_focus_only_where_it_shows() {
+        let theme = theme::load(DEFAULT_THEME, Path::new(""), None).unwrap();
+        let css = String::from_utf8(theme.assets["theme.css"].clone()).unwrap();
+        let (wide, narrow) = css.split_once("@media (width < 76.25em)").unwrap();
+        // Hidden (so out of the tab order) by default, ...
+        let rule = &wide[wide.find(".lsd-drawer-toggle {").unwrap()..];
+        let rule = &rule[..rule.find('}').unwrap()];
+        assert!(rule.contains("visibility: hidden;"), "{rule}");
+        // ... shown with its button below 76.25em, and hidden again
+        // where the button is (no navigation, 60em to 76.25em).
+        let (middle, small) = narrow.split_once("@media (width < 60em)").unwrap();
+        assert!(middle.contains(".lsd-drawer-toggle { visibility: visible; }"));
+        assert!(
+            middle.contains("body:not(:has(.lsd-nav)) .lsd-drawer-toggle { visibility: hidden; }")
+        );
+        assert!(
+            small.contains("body:not(:has(.lsd-nav)) .lsd-drawer-toggle { visibility: visible; }")
+        );
     }
 
     #[tokio::test]
