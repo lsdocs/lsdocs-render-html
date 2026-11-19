@@ -72,9 +72,9 @@
 {%- for css in theme.extra_css %}
 <link rel="stylesheet" href="{{ css | url }}">
 {%- endfor %}
+{{ asset_importmap() }}
 {%- block head %}{% endblock %}
 <script type="application/json" id="lsd-labels">{{ t.js | tojson }}</script>
-{{ asset_importmap() }}
 {%- block scripts %}
 <script type="module" src="{{ asset('js/main.js') }}"></script>
 {%- endblock %}

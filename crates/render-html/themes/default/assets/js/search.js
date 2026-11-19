@@ -174,12 +174,14 @@ export function define() {
                 input.setAttribute("aria-expanded", String(options.length > 0));
                 live.textContent = status(items.length);
             };
+            // Once the index could not be loaded, say so on every search.
+            let failed = false;
             const clear = () => {
                 options = [];
                 list.replaceChildren();
                 input.removeAttribute("aria-activedescendant");
                 input.setAttribute("aria-expanded", "false");
-                live.textContent = "";
+                live.textContent = failed ? label("search_failed") : "";
             };
             const worker = () => {
                 if (this.#worker)
@@ -189,6 +191,7 @@ export function define() {
                     created.addEventListener("message", (event) => {
                         const data = event.data;
                         if (data.type === "error") {
+                            failed = true;
                             clear();
                             live.textContent = label("search_failed");
                         }
@@ -197,12 +200,14 @@ export function define() {
                         }
                     });
                     created.addEventListener("error", () => {
+                        failed = true;
                         live.textContent = label("search_failed");
                     });
                     created.postMessage({ type: "load", url: new URL(index, location.href).href });
                     this.#worker = created;
                 }
                 catch {
+                    failed = true;
                     live.textContent = label("search_failed");
                 }
                 return this.#worker;

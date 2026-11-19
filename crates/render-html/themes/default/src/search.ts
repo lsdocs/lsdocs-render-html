@@ -179,12 +179,14 @@ export function define(): void {
           input.setAttribute("aria-expanded", String(options.length > 0));
           live.textContent = status(items.length);
         };
+        // Once the index could not be loaded, say so on every search.
+        let failed = false;
         const clear = (): void => {
           options = [];
           list.replaceChildren();
           input.removeAttribute("aria-activedescendant");
           input.setAttribute("aria-expanded", "false");
-          live.textContent = "";
+          live.textContent = failed ? label("search_failed") : "";
         };
 
         const worker = (): Worker | null => {
@@ -194,6 +196,7 @@ export function define(): void {
             created.addEventListener("message", (event: MessageEvent) => {
               const data = event.data as { type?: string; text?: string; items?: Item[] };
               if (data.type === "error") {
+                failed = true;
                 clear();
                 live.textContent = label("search_failed");
               } else if (data.type === "results" && data.text === input.value) {
@@ -201,11 +204,13 @@ export function define(): void {
               }
             });
             created.addEventListener("error", () => {
+              failed = true;
               live.textContent = label("search_failed");
             });
             created.postMessage({ type: "load", url: new URL(index, location.href).href });
             this.#worker = created;
           } catch {
+            failed = true;
             live.textContent = label("search_failed");
           }
           return this.#worker;

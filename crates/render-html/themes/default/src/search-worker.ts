@@ -234,11 +234,13 @@ if (typeof scope.WorkerGlobalScope === "function" && scope.postMessage && scope.
           return response.json() as Promise<IndexFile>;
         })
         .then(buildIndex);
+      // Each query is answered with the error, too: the page shows it
+      // whenever the user types, not only the first time.
       loading.catch(() => post({ type: "error" }));
     } else if (type === "query" && typeof text === "string" && loading) {
       loading.then(
         (index) => post({ type: "results", text, items: search(index, text) }),
-        () => {},
+        () => post({ type: "error" }),
       );
     }
   });

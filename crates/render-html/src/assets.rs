@@ -26,6 +26,111 @@ pub fn hashed_path(path: &str, bytes: &[u8]) -> String {
     format!("{DIR}/{dir}{name}")
 }
 
+/// Resolves the asset `path` into `done` (its output path and final
+/// contents), resolving the assets a CSS file refers to first. `active`
+/// holds the files being resolved, to stop cycles.
+fn resolve(
+    path: &str,
+    assets: &BTreeMap<String, Vec<u8>>,
+    done: &mut BTreeMap<String, (String, Vec<u8>)>,
+    active: &mut Vec<String>,
+) -> Option<String> {
+    if let Some((output, _)) = done.get(path) {
+        return Some(output.clone());
+    }
+    if active.iter().any(|a| a == path) {
+        return None;
+    }
+    let bytes = assets.get(path)?;
+    let bytes = match (path.ends_with(".css"), std::str::from_utf8(bytes)) {
+        (true, Ok(text)) if text.contains("url(") => {
+            active.push(path.to_owned());
+            let text = rewrite_urls(text, path, assets, done, active);
+            active.pop();
+            text.into_bytes()
+        }
+        _ => bytes.clone(),
+    };
+    let output = hashed_path(path, &bytes);
+    done.insert(path.to_owned(), (output.clone(), bytes));
+    Some(output)
+}
+
+/// `text` (the CSS file `path`) with its relative `url(...)` references to
+/// other assets pointing at their output paths.
+fn rewrite_urls(
+    text: &str,
+    path: &str,
+    assets: &BTreeMap<String, Vec<u8>>,
+    done: &mut BTreeMap<String, (String, Vec<u8>)>,
+    active: &mut Vec<String>,
+) -> String {
+    let dir = path.rfind('/').map_or("", |at| &path[..=at]);
+    // Where the CSS file's output will be, for relative URLs: only its
+    // directory matters, and it is `_lsdocs/` plus the source directory.
+    let from = format!("{DIR}/{dir}x");
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("url(") {
+        let (before, after) = rest.split_at(at + 4);
+        out.push_str(before);
+        let Some(end) = after.find(')') else {
+            rest = after;
+            break;
+        };
+        let inner = &after[..end];
+        let trimmed = inner.trim();
+        let (quote, target) = match trimmed.chars().next() {
+            Some(q @ ('"' | '\'')) if trimmed.len() >= 2 && trimmed.ends_with(q) => {
+                (Some(q), &trimmed[1..trimmed.len() - 1])
+            }
+            _ => (None, trimmed),
+        };
+        match rewrite_target(target, dir, &from, assets, done, active) {
+            Some(new) => match quote {
+                Some(q) => out.push_str(&format!("{q}{new}{q}")),
+                None => out.push_str(&new),
+            },
+            None => out.push_str(inner),
+        }
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The new text of one reference `target`, if it names an asset.
+fn rewrite_target(
+    target: &str,
+    dir: &str,
+    from: &str,
+    assets: &BTreeMap<String, Vec<u8>>,
+    done: &mut BTreeMap<String, (String, Vec<u8>)>,
+    active: &mut Vec<String>,
+) -> Option<String> {
+    if target.is_empty()
+        || target.starts_with(['/', '#'])
+        || target.contains(':')
+        || target.contains('\\')
+    {
+        return None;
+    }
+    let split = target.find(['?', '#']).unwrap_or(target.len());
+    let (file, suffix) = target.split_at(split);
+    let mut parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
+    for part in file.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            name => parts.push(name),
+        }
+    }
+    let output = resolve(&parts.join("/"), assets, done, active)?;
+    Some(format!("{}{suffix}", relative_path(from, &output)))
+}
+
 /// A theme's assets, with their output paths.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Assets {
@@ -34,14 +139,18 @@ pub struct Assets {
 }
 
 impl Assets {
-    /// The assets of a theme (by path under `assets/`).
+    /// The assets of a theme (by path under `assets/`). Relative `url(...)`
+    /// references in CSS files are rewritten to the hashed names of the
+    /// assets they refer to (a CSS file's hash covers the rewritten text,
+    /// so it changes when a referenced file does). References to files
+    /// the theme does not have, and references that form a cycle, are left
+    /// as they are.
     pub fn new(assets: &BTreeMap<String, Vec<u8>>) -> Self {
-        Self {
-            entries: assets
-                .iter()
-                .map(|(path, bytes)| (path.clone(), (hashed_path(path, bytes), bytes.clone())))
-                .collect(),
+        let mut entries = BTreeMap::new();
+        for path in assets.keys() {
+            resolve(path, assets, &mut entries, &mut Vec::new());
         }
+        Self { entries }
     }
 
     /// The URL of the asset `path` from the page whose source is `from`
@@ -136,6 +245,72 @@ mod tests {
                 .iter()
                 .any(|f| f.path == css && f.output == b"body {}")
         );
+    }
+
+    #[test]
+    fn css_references_follow_the_hashed_names() {
+        let theme = |font: &[u8]| {
+            Assets::new(&BTreeMap::from([
+                (
+                    "css/a.css".to_owned(),
+                    b"@font-face { src: url(../fonts/x.woff2) }
+                      .a { background: url(\"img/b.svg\") }
+                      .b { background: url('data:image/png;base64,AAAA') }
+                      .c { background: url(https://x.org/y.png) url(#frag) url(/abs.png) url(missing.png) }"
+                        .to_vec(),
+                ),
+                ("fonts/x.woff2".to_owned(), font.to_vec()),
+                ("css/img/b.svg".to_owned(), b"<svg/>".to_vec()),
+            ]))
+        };
+        let assets = theme(b"font");
+        let font = hashed_path("fonts/x.woff2", b"font");
+        let svg = hashed_path("css/img/b.svg", b"<svg/>");
+        let files = assets.files();
+        let css = files
+            .iter()
+            .find(|f| f.path.starts_with("_lsdocs/css/a."))
+            .unwrap();
+        let text = String::from_utf8(css.output.clone()).unwrap();
+        assert!(
+            text.contains(&format!(
+                "url(../{})",
+                font.strip_prefix("_lsdocs/").unwrap()
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "url(\"{}\")",
+                svg.strip_prefix("_lsdocs/css/").unwrap()
+            )),
+            "{text}"
+        );
+        for kept in [
+            "url('data:image/png;base64,AAAA')",
+            "url(https://x.org/y.png)",
+            "url(#frag)",
+            "url(/abs.png)",
+            "url(missing.png)",
+        ] {
+            assert!(text.contains(kept), "{text}");
+        }
+        assert!(files.iter().any(|f| f.path == font));
+        assert!(files.iter().any(|f| f.path == svg));
+        // The CSS's own hash follows what it references.
+        let css_path = assets.url("a.md", "css/a.css").unwrap();
+        assert_eq!(css_path, css.path);
+        let other = theme(b"font2").url("a.md", "css/a.css").unwrap();
+        assert_ne!(css_path, other);
+    }
+
+    #[test]
+    fn css_cycles_are_left_alone() {
+        let assets = Assets::new(&BTreeMap::from([
+            ("a.css".to_owned(), b"@import url(b.css);".to_vec()),
+            ("b.css".to_owned(), b"@import url(a.css);".to_vec()),
+        ]));
+        assert_eq!(assets.files().len(), 2);
     }
 
     #[test]

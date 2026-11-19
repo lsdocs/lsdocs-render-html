@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let themes = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?).join("themes");
-    println!("cargo:rerun-if-changed={}", themes.display());
     let mut out = String::from(
         "/// A theme's files: each one's path in the theme's directory (`/`\n\
          /// separators) and contents.\n\
@@ -20,6 +19,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     for (name, dir) in sorted(&themes)? {
         if !dir.is_dir() {
             continue;
+        }
+        // Not the whole directory: it holds the TypeScript sources and
+        // their `node_modules`.
+        for part in ["theme.toml", "templates", "assets"] {
+            println!("cargo:rerun-if-changed={}", dir.join(part).display());
         }
         writeln!(out, "    ({name:?}, &[")?;
         let mut files = Vec::new();

@@ -666,6 +666,20 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
+    #[test]
+    fn the_import_map_precedes_head_overrides() {
+        let root = temp("headorder");
+        write(
+            &root.join("over/templates/page.html"),
+            "{% extends \"theme/page.html\" %}             {% block head %}<script type=\"module\" src=\"mine.js\"></script>{% endblock %}",
+        );
+        let html = render_with("default", &root, Some("over"), &doc("a.md")).unwrap();
+        let map = html.find("type=\"importmap\"").unwrap();
+        let mine = html.find("mine.js").unwrap();
+        assert!(map < mine, "{html}");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     #[tokio::test]
     async fn theme_settings_are_validated() {
         let root = temp("settings");
