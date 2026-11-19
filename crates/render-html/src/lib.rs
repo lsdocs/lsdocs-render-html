@@ -50,6 +50,7 @@
 //! | `site.title`, `site.base_url` | From the site config. |
 //! | `theme` | The theme's settings: its defaults, with `theme_settings` on top. |
 //! | `lsdocs.version` | lsdocs' version. |
+//! | `search_index` | `_lsdocs/search.json`, if the theme uses search (`search = true` in its `theme.toml`). |
 //!
 //! They have the filters `link` (a link to a source file becomes a link to
 //! its output: `{{ item.url | link }}`) and `page_url` (a source path
@@ -83,6 +84,12 @@
 //! to their HTML output (`guide.html#setup`), in the body and through the
 //! `link` filter in templates.
 //!
+//! A theme with `search = true` in its `theme.toml` gets a search index,
+//! `_lsdocs/search.json` (not hashed; see [`search`]): every page's
+//! sections with their text, except pages whose front matter says
+//! `search: false`. Each page's entry travels in its render result's
+//! `data`, so cached pages keep theirs.
+//!
 //! After every page is rendered, the plugin writes `sitemap.xml` (via the
 //! `render/transform/all` request) if the site has an absolute `base_url`. Pages
 //! whose front matter says `sitemap: false` are left out.
@@ -102,6 +109,7 @@ use minijinja::{Environment, ErrorKind, State, Value, context};
 
 pub mod assets;
 mod body;
+pub mod search;
 pub mod theme;
 
 pub use assets::Assets;
@@ -200,10 +208,17 @@ impl Renderer for Html {
         params: RenderTransformAllParams,
         ctx: &Context,
     ) -> PluginResult<RenderTransformAllResult> {
+        let prepared = self.prepared(ctx)?;
         let mut result = RenderTransformAllResult {
-            files: self.prepared(ctx)?.files(),
+            files: prepared.files(),
             diagnostics: vec![],
         };
+        if prepared.search {
+            result.files.push(OutputFile {
+                path: search::PATH.into(),
+                output: search::index(&params).into_bytes(),
+            });
+        }
         let wanted = ctx.settings().get("sitemap").and_then(|v| v.as_bool());
         if wanted == Some(false) {
             return Ok(result);
@@ -245,6 +260,13 @@ impl Renderer for Html {
                 .into_bytes(),
             extension: "html".into(),
             diagnostics: vec![],
+            // The page's entry in the search index, cached with the page
+            // and handed back at `render/transform/all`.
+            data: if prepared.search {
+                search::entry(&params.document)
+            } else {
+                Json::Null
+            },
         })
     }
 }
@@ -284,6 +306,8 @@ impl Options {
 pub struct Prepared {
     env: Environment<'static>,
     assets: Arc<Assets>,
+    /// Whether the theme uses search (`search` in its `theme.toml`).
+    pub search: bool,
 }
 
 impl Prepared {
@@ -337,11 +361,18 @@ impl Prepared {
         });
         env.add_global("theme", Value::from(Serde(&values)));
         env.add_global("lsdocs", context! { version => env!("CARGO_PKG_VERSION") });
+        if theme.search {
+            env.add_global("search_index", search::PATH);
+        }
         for (name, source) in &theme.templates {
             env.add_template_owned(name.clone(), source.clone())
                 .map_err(|e| format!("theme `{}`: invalid template {name}: {e}", theme.name))?;
         }
-        Ok(Self { env, assets })
+        Ok(Self {
+            env,
+            assets,
+            search: theme.search,
+        })
     }
 
     /// The template environment.
@@ -750,6 +781,7 @@ mod tests {
             source: String::new(),
             path: path.into(),
             metadata: serde_json::from_value(metadata).unwrap(),
+            ..RenderedPage::default()
         };
         let params = RenderTransformAllParams {
             format: "html".into(),
@@ -1018,9 +1050,60 @@ mod tests {
             .unwrap();
         let paths: Vec<_> = result.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(paths.len(), 1, "{paths:?}");
+        // No search index for a theme without search.
+        assert!(!paths.contains(&search::PATH), "{paths:?}");
         assert!(
             paths[0].starts_with("_lsdocs/plain.") && paths[0].ends_with(".css"),
             "{paths:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn the_default_theme_gets_a_search_index() {
+        let setup = lsdocs_plugin_sdk::Setup::with_settings(
+            InitializeParams::default(),
+            serde_json::json!({"sitemap": false}),
+        );
+        let ctx = lsdocs_plugin_sdk::testing::context(&setup);
+        let html = Html::default();
+        let rendered = html
+            .render(
+                RenderParams {
+                    document: doc("a.md"),
+                    format: "html".into(),
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rendered.data, search::entry(&doc("a.md")));
+        let page = String::from_utf8(rendered.output).unwrap();
+        assert!(
+            page.contains("data-index=\"_lsdocs/search.json\""),
+            "{page}"
+        );
+        let result = html
+            .render_all(
+                RenderTransformAllParams {
+                    format: "html".into(),
+                    pages: vec![lsdocs_plugin_sdk::protocol::RenderedPage {
+                        source: "a.md".into(),
+                        path: "a.html".into(),
+                        data: rendered.data,
+                        ..Default::default()
+                    }],
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
+        let index = result
+            .files
+            .iter()
+            .find(|f| f.path == search::PATH)
+            .unwrap();
+        let index: serde_json::Value = serde_json::from_slice(&index.output).unwrap();
+        assert_eq!(index["pages"][0]["url"], "a.html");
+        assert_eq!(index["pages"][0]["title"], "Tom & Jerry");
     }
 }

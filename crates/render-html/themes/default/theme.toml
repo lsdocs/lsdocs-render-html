@@ -2,6 +2,9 @@
 # go under `[settings]`; a site sets them in render-html's
 # `theme_settings`.
 
+# The theme searches the site: render-html writes `_lsdocs/search.json`.
+search = true
+
 [settings]
 # The color scheme before the reader picks one: "auto" (the system's),
 # "light" or "dark".

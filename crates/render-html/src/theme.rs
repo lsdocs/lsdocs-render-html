@@ -19,6 +19,9 @@ pub struct Theme {
     pub assets: BTreeMap<String, Vec<u8>>,
     /// The `[settings]` of `theme.toml`: each setting's default.
     pub settings: toml::Table,
+    /// `search` in `theme.toml`: whether the theme uses the search index
+    /// (`_lsdocs/search.json`), so it is written.
+    pub search: bool,
 }
 
 /// The built-in themes, embedded by `build.rs`.
@@ -44,6 +47,7 @@ impl Theme {
             add(bytes);
         }
         add(self.settings.to_string().as_bytes());
+        add(&[u8::from(self.search)]);
         hasher.finalize().to_hex()[..16].to_owned()
     }
 
@@ -110,7 +114,7 @@ pub fn load(spec: &str, root: &Path, overrides: Option<&Path>) -> Result<Theme, 
     };
     for (path, bytes) in files {
         if path == "theme.toml" {
-            theme.settings = manifest(spec, &bytes)?;
+            (theme.settings, theme.search) = manifest(spec, &bytes)?;
         } else {
             theme.add(&path, bytes, true)?;
         }
@@ -135,9 +139,10 @@ pub fn load(spec: &str, root: &Path, overrides: Option<&Path>) -> Result<Theme, 
     Ok(theme)
 }
 
-/// The settings `theme.toml` declares: its `[settings]` table, the only
-/// key it may have.
-fn manifest(spec: &str, bytes: &[u8]) -> Result<toml::Table, String> {
+/// What `theme.toml` declares: its `[settings]` table and whether the
+/// theme uses search (`search`, a boolean, default false), the only keys
+/// it may have.
+fn manifest(spec: &str, bytes: &[u8]) -> Result<(toml::Table, bool), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| format!("theme `{spec}`: theme.toml is not UTF-8"))?;
     let mut table: toml::Table =
@@ -151,9 +156,18 @@ fn manifest(spec: &str, bytes: &[u8]) -> Result<toml::Table, String> {
             ));
         }
     };
+    let search = match table.remove("search") {
+        None => false,
+        Some(toml::Value::Boolean(search)) => search,
+        Some(_) => {
+            return Err(format!(
+                "theme `{spec}`: theme.toml: `search` must be a boolean"
+            ));
+        }
+    };
     if let Some(key) = table.keys().next() {
         return Err(format!(
-            "theme `{spec}`: theme.toml: unknown key `{key}` (known: settings)"
+            "theme `{spec}`: theme.toml: unknown key `{key}` (known: search, settings)"
         ));
     }
     if let Some((key, _)) = settings.iter().find(|(_, value)| value.is_datetime()) {
@@ -161,7 +175,7 @@ fn manifest(spec: &str, bytes: &[u8]) -> Result<toml::Table, String> {
             "theme `{spec}`: theme.toml: setting `{key}` is a date, which settings cannot be"
         ));
     }
-    Ok(settings)
+    Ok((settings, search))
 }
 
 /// Every file under `dir`'s `templates/` and `assets/`, as
@@ -358,6 +372,21 @@ mod tests {
         write(&root.join("odd/templates/page.html"), "x");
         let odd = load("odd", &root, None).unwrap_err();
         assert!(odd.contains("`colour`"), "{odd}");
+        write(
+            &root.join("odd/theme.toml"),
+            "search = \"yes\"
+",
+        );
+        let odd = load("odd", &root, None).unwrap_err();
+        assert!(odd.contains("`search`"), "{odd}");
+        write(
+            &root.join("odd/theme.toml"),
+            "search = true
+",
+        );
+        assert!(load("odd", &root, None).unwrap().search);
+        assert!(!mine.search && !plain.search);
+        assert!(load("default", &root, None).unwrap().search);
         std::fs::remove_dir_all(&root).unwrap();
     }
 

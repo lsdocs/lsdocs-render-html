@@ -6,7 +6,9 @@
 {%- if theme.logo %}<img class="lsd-logo" src="{{ theme.logo | url }}" alt="">{% endif -%}
 <span>{{ site.title or t.home }}</span></a>
 <div class="lsd-header-tools">
-<lsd-search class="lsd-search"></lsd-search>
+{%- if search_index %}
+<lsd-search class="lsd-search" data-index="{{ search_index | url }}" data-worker="{{ asset('js/search-worker.js') }}"></lsd-search>
+{%- endif %}
 <lsd-palette class="lsd-palette"></lsd-palette>
 </div>
 </header>

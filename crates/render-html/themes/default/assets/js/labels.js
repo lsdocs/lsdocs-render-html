@@ -9,6 +9,13 @@ const english = {
     scheme_auto: "System",
     scheme_light: "Light",
     scheme_dark: "Dark",
+    search: "Search",
+    search_placeholder: "Search the site",
+    search_close: "Close",
+    search_none: "No results",
+    search_one: "1 result",
+    search_many: "{count} results",
+    search_failed: "Search is unavailable",
 };
 let page = null;
 /** The label `name`, from the page if it has it. */
