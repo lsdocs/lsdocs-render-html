@@ -285,12 +285,14 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
     match node {
         Node::Section(n) => {
             out.push_str(&format!("<section{}>\n", id_attr(&n.id)));
-            for (i, child) in n.children.iter().enumerate() {
-                match child {
-                    Node::Heading(h) if i == 0 => heading(opts, h, n.id.as_deref(), out),
-                    child => render(opts, child, out),
+            let rest = match n.children.split_first() {
+                Some((Node::Heading(h), rest)) => {
+                    heading(opts, h, n.id.as_deref(), out);
+                    rest
                 }
-            }
+                _ => &n.children[..],
+            };
+            children(opts, rest, out);
             out.push_str("</section>\n");
         }
         Node::Heading(n) => heading(opts, n, None, out),
@@ -755,6 +757,38 @@ mod tests {
         ]
         .join("\n");
         assert_eq!(body(&doc, &Options::default()), expected);
+    }
+
+    #[test]
+    fn footnotes_inside_sections_are_grouped() {
+        use lsdocs_plugin_sdk::doctree::{FootnoteDefinition, Section};
+        let def = |label: &str| {
+            Node::FootnoteDefinition(FootnoteDefinition {
+                label: label.into(),
+                ..FootnoteDefinition::default()
+            })
+        };
+        let html = render_nodes(vec![Node::Section(Section {
+            id: Some("s".into()),
+            children: vec![
+                Node::Heading(Heading {
+                    level: 1,
+                    children: vec![text("S")],
+                    ..Heading::default()
+                }),
+                def("1"),
+                def("2"),
+            ],
+            ..Section::default()
+        })]);
+        assert_eq!(
+            html.matches("<div class=\"lsd-footnotes\"").count(),
+            1,
+            "{html}"
+        );
+        let open = html.find("<div class=\"lsd-footnotes\"").unwrap();
+        assert!(html[open..].contains("id=\"fn-1\""), "{html}");
+        assert!(html[open..].contains("id=\"fn-2\""), "{html}");
     }
 
     #[test]
