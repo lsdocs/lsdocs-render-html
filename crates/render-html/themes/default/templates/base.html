@@ -91,7 +91,7 @@
 </div>
 {%- endif %}
 <main class="lsd-main" id="lsd-content">
-{%- if theme.edit_url %}
+{%- if theme.edit_url and not page.metadata.generated %}
 <a class="lsd-edit" href="{{ theme.edit_url | replace('{path}', page.source) | url }}" title="{{ t.edit }}">{{ icons.icon("edit") }}<span>{{ t.edit }}</span></a>
 {%- endif %}
 <article class="lsd-article">

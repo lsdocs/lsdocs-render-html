@@ -910,6 +910,17 @@ mod tests {
             html.contains("href=\"https://example.com/edit/main/guide/a.md\""),
             "{html}"
         );
+        // A generated page has no source file to edit.
+        let mut generated = full_doc("guide/a.md");
+        generated
+            .metadata
+            .insert("generated".into(), serde_json::json!(true));
+        let html = render_default(
+            serde_json::json!({"edit_url": "https://example.com/edit/{path}"}),
+            &generated,
+        )
+        .unwrap();
+        assert!(!html.contains("lsd-edit"), "{html}");
         // Without settings: no edit link, logo or extra files.
         let html = render_default(serde_json::json!({}), &full_doc("guide/a.md")).unwrap();
         assert!(html.contains("--lsd-primary: #4051b5;"), "{html}");

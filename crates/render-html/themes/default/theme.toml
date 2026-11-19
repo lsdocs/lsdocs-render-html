@@ -34,4 +34,5 @@ social = []
 footer = ""
 # The edit-this-page link: a URL with `{path}` for the page's source path,
 # e.g. "https://example.com/repo/edit/main/docs/{path}"; empty: none.
+# Generated pages (`generated` metadata, set by the host) get none.
 edit_url = ""
