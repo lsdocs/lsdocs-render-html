@@ -99,10 +99,10 @@ def "nur msrv" [] {
     cargo-org $"+($highest)" check --workspace
 }
 
-# Licenses, advisories and sources of the dependencies (deny.toml; needs
-# cargo-deny, from mise).
+# Licenses, advisories and sources of the dependencies (.config/deny.toml).
+# mise installs cargo-deny on first use (.config/mise.deny.toml).
 def "nur deny" [] {
-    cargo-org deny check
+    with-env ((org org-env) | insert MISE_ENV deny) { ^mise exec cargo:cargo-deny -- cargo deny check }
 }
 
 # Updates the lockfile's revision of organization crates (all, or one).
@@ -110,24 +110,18 @@ def "nur bump" [crate?: string] {
     if $crate == null { cargo-org update } else { cargo-org update -p $crate }
 }
 
-# Environment for running Node.js through fnm when `node` is not already on
-# PATH (non-interactive shells usually skip `fnm env`).
+# Environment for running Node.js from mise (.node-version) when `node` is
+# not already on PATH (an activated mise puts it there). Only PATH: mise's
+# other variables (a global RUSTUP_TOOLCHAIN, say) would override the
+# repository's own.
 def node-env []: nothing -> record {
     if (which node | is-not-empty) { return {} }
-    let fnm = which fnm | get -o 0.path | default (
-        $nu.home-dir | path join .local share fnm fnm
-    )
-    if not ($fnm | path exists) and (which fnm | is-empty) {
-        error make --unspanned {msg: "Node.js not found: install it, or fnm (https://github.com/Schniz/fnm)"}
+    if (which mise | is-empty) {
+        error make --unspanned {msg: "Node.js not found: install mise, then run `mise install`"}
     }
-    let vars = ^$fnm env --json | from json
-    let bin = if $nu.os-info.name == "windows" {
-        $vars.FNM_MULTISHELL_PATH
-    } else {
-        $vars.FNM_MULTISHELL_PATH | path join bin
-    }
-    # Joined explicitly: nur does not convert list-valued PATH for children.
-    $vars | insert PATH ($env.PATH | prepend $bin | str join (char esep))
+    ^mise install --quiet node
+    # A string: nur does not convert list-valued PATH for children.
+    {PATH: (^mise env --json | from json | get PATH)}
 }
 
 # Installs a Node package's dependencies, again whenever the platform
