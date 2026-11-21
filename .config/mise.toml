@@ -2,4 +2,7 @@
 # Rust itself comes from rustup, as rust-toolchain.toml says.
 [tools]
 "cargo:nur" = "0.32.0"
-node = "26"
+
+[settings]
+# Node.js from the version files at the root.
+idiomatic_version_file_enable_tools = ["node"]
