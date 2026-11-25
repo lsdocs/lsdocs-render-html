@@ -1,7 +1,9 @@
 // `<lsd-copy>`: around a code block (`figure.lsd-code`), adds a button that
-// copies the code, and announces the result in a live region.
+// copies the code, and announces the result in a live region. It also
+// draws the block's line numbers and emphasized lines (lines.ts).
 
 import { label } from "./labels.js";
+import { decorate } from "./lines.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const ICON = "M9 9h11v11H9zM5 15H4V4h11v1";
@@ -45,6 +47,7 @@ export function define(): void {
     class extends HTMLElement {
       #abort: AbortController | null = null;
       #added: Element[] = [];
+      #undecorate: (() => void) | null = null;
 
       connectedCallback(): void {
         this.#abort?.abort();
@@ -52,6 +55,9 @@ export function define(): void {
         if (!pre) return;
         const abort = new AbortController();
         this.#abort = abort;
+
+        const figure = pre.closest<HTMLElement>("figure.lsd-code");
+        if (figure) this.#undecorate = decorate(figure, pre);
 
         const button = document.createElement("button");
         button.type = "button";
@@ -104,6 +110,8 @@ export function define(): void {
       disconnectedCallback(): void {
         this.#abort?.abort();
         this.#abort = null;
+        this.#undecorate?.();
+        this.#undecorate = null;
         for (const element of this.#added) element.remove();
         this.#added = [];
       }
