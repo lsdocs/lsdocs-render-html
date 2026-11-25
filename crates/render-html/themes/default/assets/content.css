@@ -240,7 +240,24 @@
       grid-template-columns: auto minmax(0, 1fr);
 
       & > pre { border-start-start-radius: 0; border-end-start-radius: 0; padding-inline-start: 0.8em; }
-      & > figcaption { grid-column: 1 / -1; }
+      & > :is(figcaption, .lsd-code-title) { grid-column: 1 / -1; }
+    }
+    /* A title (`title=` on the block): a bar above the code. */
+    & > .lsd-code-title {
+      padding: 0.45em 3.2em 0.45em 1.4em;
+      font-family: var(--lsd-font-code);
+      font-size: 0.75em;
+      font-weight: 700;
+      color: var(--lsd-fg-muted);
+      background: var(--lsd-bg-soft);
+      border-bottom: 1px solid var(--lsd-border);
+      border-start-start-radius: var(--lsd-radius);
+      border-start-end-radius: var(--lsd-radius);
+      overflow-wrap: anywhere;
+    }
+    & > .lsd-code-title ~ :is(pre, .lsd-linenos) {
+      border-start-start-radius: 0;
+      border-start-end-radius: 0;
     }
     & > .lsd-linenos {
       padding: var(--lsd-code-pad) 0.6em var(--lsd-code-pad) 1em;

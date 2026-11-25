@@ -21,6 +21,10 @@ Items marked `[ ]` under TODO are also limitations until done.
   attributes), so they are not shown without JavaScript. The bands
   assume lines of one height (`pre` does not wrap) and use the CSS `lh`
   unit.
+- A code block's title comes only from `title=` in its fence's info
+  string (MkDocs' syntax, quotes optional); MkDocs' `linenums` and
+  `hl_lines` are read there too. A MyST `code-block`'s `:caption:` stays
+  a caption (a `figcaption` after the code), not a title.
 
 ## TODO
 
@@ -44,7 +48,7 @@ From the flagship theme's plan (Phase 13):
 - [~] Content components themes style. Done: content tabs (`tab-set` /
       `tab-item` directives, sphinx-design's names, in the `extras`
       plugin, for both parsers) and
-      copy buttons, line numbers and highlighted lines. Not done, and on
-      the TODO list: buttons, icons and emoji, code block titles, and
-      MkDocs-style `===` tab blocks.
+      copy buttons, line numbers, highlighted lines and code block
+      titles. Not done, and on the TODO list: buttons, icons and emoji,
+      and MkDocs-style `===` tab blocks.
 - [ ] Instant navigation, code annotations, navigation tabs.

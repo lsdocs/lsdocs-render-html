@@ -205,10 +205,51 @@ fn is_code(node: &Node) -> bool {
     }
 }
 
+/// A code block's info string (after the language) as options: words
+/// separated by white space, each `key` or `key=value`, where the value
+/// may be quoted (`title="a b.rs"`, or with `'`) to hold white space.
+fn info_options(info: &str) -> Vec<(String, Option<String>)> {
+    let mut options = Vec::new();
+    let mut chars = info.chars().peekable();
+    loop {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        let mut key = String::new();
+        while let Some(c) = chars.next_if(|c| !c.is_whitespace() && *c != '=') {
+            key.push(c);
+        }
+        let value = if chars.next_if_eq(&'=').is_some() {
+            let mut value = String::new();
+            match chars.next_if(|c| *c == '"' || *c == '\'') {
+                Some(quote) => {
+                    for c in chars.by_ref() {
+                        if c == quote {
+                            break;
+                        }
+                        value.push(c);
+                    }
+                }
+                None => {
+                    while let Some(c) = chars.next_if(|c| !c.is_whitespace()) {
+                        value.push(c);
+                    }
+                }
+            }
+            Some(value)
+        } else {
+            None
+        };
+        if key.is_empty() && value.is_none() {
+            return options;
+        }
+        options.push((key, value));
+    }
+}
+
 /// A code block (`code`: a code block, or a `custom:highlight` with its
 /// HTML) as `<lsd-copy><figure class="lsd-code">`, with the language,
-/// line numbers and emphasized lines as data and the caption, if any,
-/// as a `figcaption` after the `<pre>`.
+/// line numbers and emphasized lines as data, the title (`title=` in
+/// its info), if any, as a `div.lsd-code-title` before the `<pre>`, and
+/// the caption, if any, as a `figcaption` after it.
 fn code_figure(
     opts: &Page<'_>,
     id: Option<&str>,
@@ -240,26 +281,38 @@ fn code_figure(
     if let Some(language) = language {
         attrs.push_str(&format!(" data-language=\"{}\"", escape(language)));
     }
-    // The `info` of a code block: space-separated `linenos`,
-    // `lineno-start=N` and `emphasize-lines=SPEC` (and anything else a
+    // The `info` of a code block: `linenos`, `lineno-start=N`,
+    // `emphasize-lines=SPEC` and `title=TEXT` (Sphinx's options), or
+    // MkDocs' `linenums=N` and `hl_lines="1 3-4"` (and anything else a
     // parser leaves there, which is ignored).
-    for token in block
-        .and_then(|b| b.info.as_deref())
-        .unwrap_or_default()
-        .split_whitespace()
-    {
-        match token.split_once('=') {
-            None if token == "linenos" => attrs.push_str(" data-linenos"),
-            Some(("lineno-start", n)) => {
-                attrs.push_str(&format!(" data-line-start=\"{}\"", escape(n)));
+    let mut title = None;
+    for (key, value) in info_options(block.and_then(|b| b.info.as_deref()).unwrap_or_default()) {
+        match (key.as_str(), value) {
+            ("linenos", None) => attrs.push_str(" data-linenos"),
+            ("lineno-start", Some(n)) => {
+                attrs.push_str(&format!(" data-line-start=\"{}\"", escape(&n)));
             }
-            Some(("emphasize-lines", spec)) => {
-                attrs.push_str(&format!(" data-lines=\"{}\"", escape(spec)));
+            ("linenums", Some(n)) => {
+                attrs.push_str(&format!(" data-linenos data-line-start=\"{}\"", escape(&n)));
             }
+            ("emphasize-lines", Some(spec)) => {
+                attrs.push_str(&format!(" data-lines=\"{}\"", escape(&spec)));
+            }
+            ("hl_lines", Some(spec)) => {
+                let spec = spec.split_whitespace().collect::<Vec<_>>().join(",");
+                attrs.push_str(&format!(" data-lines=\"{}\"", escape(&spec)));
+            }
+            ("title", Some(text)) if !text.is_empty() => title = Some(text),
             _ => {}
         }
     }
     out.push_str(&format!("<lsd-copy><figure{attrs}>"));
+    if let Some(title) = title {
+        out.push_str(&format!(
+            "<div class=\"lsd-code-title\">{}</div>",
+            escape(&title)
+        ));
+    }
     match (highlighted, block) {
         (Some(html), _) => out.push_str(html.trim_end_matches('\n')),
         (None, Some(block)) => {
@@ -541,6 +594,45 @@ mod tests {
             html,
             "<lsd-copy><figure class=\"lsd-code\" data-language=\"rust\">\
              <pre><code class=\"language-rust\">a &lt; b</code></pre></figure></lsd-copy>\n"
+        );
+    }
+
+    #[test]
+    fn info_options_take_quoted_values() {
+        let options = info_options(" linenos title=\"a b.rs\"  hl_lines='1 3' x=1 =y ");
+        let options: Vec<_> = options
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_deref()))
+            .collect();
+        assert_eq!(
+            options,
+            [
+                ("linenos", None),
+                ("title", Some("a b.rs")),
+                ("hl_lines", Some("1 3")),
+                ("x", Some("1")),
+                ("", Some("y")),
+            ]
+        );
+        assert!(info_options("").is_empty());
+        assert_eq!(info_options("t=\"open").len(), 1);
+    }
+
+    #[test]
+    fn titles_and_mkdocs_options_on_the_code_figure() {
+        use lsdocs_plugin_sdk::doctree::CodeBlock;
+        let html = render_nodes(vec![Node::CodeBlock(CodeBlock {
+            language: Some("rust".into()),
+            info: Some("title=\"src/<a>.rs\" linenums=\"3\" hl_lines=\"1 2-3\"".into()),
+            value: "a".into(),
+            ..CodeBlock::default()
+        })]);
+        assert_eq!(
+            html,
+            "<lsd-copy><figure class=\"lsd-code\" data-language=\"rust\" \
+             data-linenos data-line-start=\"3\" data-lines=\"1,2-3\">\
+             <div class=\"lsd-code-title\">src/&lt;a&gt;.rs</div>\
+             <pre><code class=\"language-rust\">a</code></pre></figure></lsd-copy>\n"
         );
     }
 
