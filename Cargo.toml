@@ -15,7 +15,7 @@ repository = "https://github.com/lsdocs/lsdocs-render-html"
 [workspace.dependencies]
 lsdocs-plugin-sdk = { git = "https://github.com/lsdocs/lsdocs-plugin-sdk", branch = "main", version = "0.1.0" }
 # For the snapshot test (tests/site.rs).
-lsdocs-parser-markdown = { git = "https://github.com/lsdocs/lsdocs-markdown", branch = "main", version = "0.1.0" }
+lsdocs-parser-markdown = { git = "https://github.com/lsdocs/lsdocs-markdown", branch = "main", version = "0.1.0", default-features = false, features = ["myst"] }
 
 # Third-party crates.
 blake3 = { version = "1.8.7", default-features = false, features = ["std", "pure"] }
