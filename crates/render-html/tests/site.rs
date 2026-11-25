@@ -21,7 +21,7 @@ fn site_dir() -> PathBuf {
 
 fn parse(source: &str) -> Document {
     let text = std::fs::read_to_string(site_dir().join(source)).unwrap();
-    let (doc, diagnostics) = lsdocs_parser_markdown::parse(source, &text);
+    let (doc, diagnostics) = lsdocs_parser_markdown::myst::parse(source, &text);
     assert!(diagnostics.is_empty(), "{source}: {diagnostics:?}");
     doc
 }
