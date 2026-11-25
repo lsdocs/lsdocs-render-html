@@ -16,6 +16,17 @@ writing themes.
 
 Items marked `[ ]` under TODO are also limitations until done.
 
+- The `default` theme draws code blocks' line numbers and emphasized
+  lines with its script (the body writer leaves them as `data-`
+  attributes), so they are not shown without JavaScript. The bands
+  assume lines of one height (`pre` does not wrap) and use the CSS `lh`
+  unit.
+- A code block's title bar (`figcaption.lsd-code-title`, before the
+  code) shows its caption (`:caption:`) or `title=` from its fence's info
+  string (MkDocs' syntax, quotes optional); with both, the title is in
+  `strong` and the caption in a paragraph under it. MkDocs' `linenums`
+  and `hl_lines` are read from the info string too.
+
 ## TODO
 
 - [ ] `render-html` draws `custom` nodes as an empty `div` with the kind as
@@ -32,16 +43,13 @@ Items marked `[ ]` under TODO are also limitations until done.
 - [ ] The `default` theme's social icons are a few generic ones drawn for
       it (`link`, `mail`, `rss`, `chat`, `code`) or an image; no brand
       icons (GitHub, Mastodon, ...) yet, which need a licensed icon set.
-- [ ] Code blocks' `data-lines` (highlighted lines) and `data-linenos`
-      are not drawn by the `default` theme: CSS cannot address a line of a
-      `pre`. Needs per-line markup from the body writer, or a script.
 
 From the flagship theme's plan (Phase 13):
 
 - [~] Content components themes style. Done: content tabs (`tab-set` /
       `tab-item` directives, sphinx-design's names, in the `extras`
       plugin, for both parsers) and
-      copy buttons. Not done, and on the TODO list: buttons, icons and
-      emoji, code block titles, highlighted lines, and MkDocs-style `===`
-      tab blocks.
+      copy buttons, line numbers, highlighted lines and code block
+      titles. Not done, and on the TODO list: buttons, icons and emoji,
+      and MkDocs-style `===` tab blocks.
 - [ ] Instant navigation, code annotations, navigation tabs.

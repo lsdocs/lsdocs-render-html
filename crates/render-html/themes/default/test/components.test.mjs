@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { gradient, numbers, parseLines, runs } from "../assets/js/lines.js";
 import { nextScheme } from "../assets/js/palette.js";
 import { linkedTabs } from "../assets/js/tabs.js";
 import { currentSection } from "../assets/js/toc.js";
@@ -48,4 +49,28 @@ test("state_works_without_storage_or_a_page", () => {
   assert.equal(consent.value, null);
   scheme.value = nextScheme(scheme.value);
   assert.equal(scheme.value, "light");
+});
+
+test("emphasized_lines_parse_within_the_block", () => {
+  assert.deepEqual(parseLines("1,3-4", 10), [1, 3, 4]);
+  assert.deepEqual(parseLines(" 4-3 , 2,2, 9-12", 10), [2, 9, 10]);
+  assert.deepEqual(parseLines("0-1,x,1-2-3,", 5), [1]);
+  assert.deepEqual(parseLines("", 5), []);
+});
+
+test("emphasized_lines_paint_one_band_per_run", () => {
+  assert.deepEqual(runs([1, 3, 4, 5, 8]), [[1, 1], [3, 5], [8, 8]]);
+  assert.deepEqual(runs([]), []);
+  assert.equal(
+    gradient([2, 3]),
+    "linear-gradient(transparent, transparent calc(var(--lsd-code-pad) + 1lh), " +
+      "var(--lsd-code-hl) calc(var(--lsd-code-pad) + 1lh), " +
+      "var(--lsd-code-hl) calc(var(--lsd-code-pad) + 3lh), " +
+      "transparent calc(var(--lsd-code-pad) + 3lh), transparent)",
+  );
+});
+
+test("line_numbers_count_from_the_start", () => {
+  assert.equal(numbers(3, 5), "5\n6\n7");
+  assert.equal(numbers(1, 1), "1");
 });

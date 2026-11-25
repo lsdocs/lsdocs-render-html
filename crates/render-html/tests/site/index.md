@@ -14,6 +14,11 @@ fn main() {
 }
 ```
 
+```toml title="lsdocs.toml" hl_lines="2"
+[project]
+name = "test"
+```
+
 ### Deeper {#deeper}
 
 | Name | Value |

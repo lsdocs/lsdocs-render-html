@@ -205,10 +205,51 @@ fn is_code(node: &Node) -> bool {
     }
 }
 
+/// A code block's info string (after the language) as options: words
+/// separated by white space, each `key` or `key=value`, where the value
+/// may be quoted (`title="a b.rs"`, or with `'`) to hold white space.
+fn info_options(info: &str) -> Vec<(String, Option<String>)> {
+    let mut options = Vec::new();
+    let mut chars = info.chars().peekable();
+    loop {
+        while chars.next_if(|c| c.is_whitespace()).is_some() {}
+        let mut key = String::new();
+        while let Some(c) = chars.next_if(|c| !c.is_whitespace() && *c != '=') {
+            key.push(c);
+        }
+        let value = if chars.next_if_eq(&'=').is_some() {
+            let mut value = String::new();
+            match chars.next_if(|c| *c == '"' || *c == '\'') {
+                Some(quote) => {
+                    for c in chars.by_ref() {
+                        if c == quote {
+                            break;
+                        }
+                        value.push(c);
+                    }
+                }
+                None => {
+                    while let Some(c) = chars.next_if(|c| !c.is_whitespace()) {
+                        value.push(c);
+                    }
+                }
+            }
+            Some(value)
+        } else {
+            None
+        };
+        if key.is_empty() && value.is_none() {
+            return options;
+        }
+        options.push((key, value));
+    }
+}
+
 /// A code block (`code`: a code block, or a `custom:highlight` with its
 /// HTML) as `<lsd-copy><figure class="lsd-code">`, with the language,
-/// line numbers and emphasized lines as data and the caption, if any,
-/// as a `figcaption` after the `<pre>`.
+/// line numbers and emphasized lines as data, and its caption and title
+/// (`title=` in its info), if any, as a `figcaption.lsd-code-title`
+/// before the `<pre>`.
 fn code_figure(
     opts: &Page<'_>,
     id: Option<&str>,
@@ -240,26 +281,57 @@ fn code_figure(
     if let Some(language) = language {
         attrs.push_str(&format!(" data-language=\"{}\"", escape(language)));
     }
-    // The `info` of a code block: space-separated `linenos`,
-    // `lineno-start=N` and `emphasize-lines=SPEC` (and anything else a
+    // The `info` of a code block: `linenos`, `lineno-start=N`,
+    // `emphasize-lines=SPEC` and `title=TEXT` (Sphinx's options), or
+    // MkDocs' `linenums=N` and `hl_lines="1 3-4"` (and anything else a
     // parser leaves there, which is ignored).
-    for token in block
-        .and_then(|b| b.info.as_deref())
-        .unwrap_or_default()
-        .split_whitespace()
-    {
-        match token.split_once('=') {
-            None if token == "linenos" => attrs.push_str(" data-linenos"),
-            Some(("lineno-start", n)) => {
-                attrs.push_str(&format!(" data-line-start=\"{}\"", escape(n)));
+    let mut title = None;
+    for (key, value) in info_options(block.and_then(|b| b.info.as_deref()).unwrap_or_default()) {
+        match (key.as_str(), value) {
+            ("linenos", None) => attrs.push_str(" data-linenos"),
+            ("lineno-start", Some(n)) => {
+                attrs.push_str(&format!(" data-line-start=\"{}\"", escape(&n)));
             }
-            Some(("emphasize-lines", spec)) => {
-                attrs.push_str(&format!(" data-lines=\"{}\"", escape(spec)));
+            ("linenums", Some(n)) => {
+                attrs.push_str(&format!(" data-linenos data-line-start=\"{}\"", escape(&n)));
             }
+            ("emphasize-lines", Some(spec)) => {
+                attrs.push_str(&format!(" data-lines=\"{}\"", escape(&spec)));
+            }
+            ("hl_lines", Some(spec)) => {
+                let spec = spec.split_whitespace().collect::<Vec<_>>().join(",");
+                attrs.push_str(&format!(" data-lines=\"{}\"", escape(&spec)));
+            }
+            ("title", Some(text)) if !text.is_empty() => title = Some(text),
             _ => {}
         }
     }
     out.push_str(&format!("<lsd-copy><figure{attrs}>"));
+    // The title bar: the caption, or the `title=` text; with both, the
+    // title in `strong` and the caption in a paragraph under it.
+    match (title, caption) {
+        (None, None) => {}
+        (Some(title), None) => out.push_str(&format!(
+            "<figcaption class=\"lsd-code-title\">{}</figcaption>",
+            escape(&title)
+        )),
+        (None, Some(caption)) => wrap(
+            opts,
+            "figcaption",
+            " class=\"lsd-code-title\"",
+            &caption.children,
+            out,
+            false,
+        ),
+        (Some(title), Some(caption)) => {
+            out.push_str(&format!(
+                "<figcaption class=\"lsd-code-title\"><strong>{}</strong>",
+                escape(&title)
+            ));
+            wrap(opts, "p", "", &caption.children, out, false);
+            out.push_str("</figcaption>");
+        }
+    }
     match (highlighted, block) {
         (Some(html), _) => out.push_str(html.trim_end_matches('\n')),
         (None, Some(block)) => {
@@ -274,9 +346,6 @@ fn code_figure(
             ));
         }
         (None, None) => {}
-    }
-    if let Some(caption) = caption {
-        wrap(opts, "figcaption", "", &caption.children, out, false);
     }
     out.push_str("</figure></lsd-copy>\n");
 }
@@ -545,6 +614,70 @@ mod tests {
     }
 
     #[test]
+    fn a_title_and_a_caption_share_the_title_bar() {
+        use lsdocs_plugin_sdk::doctree::{CodeBlock, Figure};
+        let html = render_nodes(vec![Node::Figure(Figure {
+            children: vec![
+                Node::CodeBlock(CodeBlock {
+                    info: Some("title=a.py".into()),
+                    value: "a".into(),
+                    ..CodeBlock::default()
+                }),
+                Node::Caption(Caption {
+                    children: vec![text("Example")],
+                    ..Caption::default()
+                }),
+            ],
+            ..Figure::default()
+        })]);
+        assert_eq!(
+            html,
+            "<lsd-copy><figure class=\"lsd-code\"><figcaption class=\"lsd-code-title\">\
+             <strong>a.py</strong><p>Example</p></figcaption>\
+             <pre><code>a</code></pre></figure></lsd-copy>\n"
+        );
+    }
+
+    #[test]
+    fn info_options_take_quoted_values() {
+        let options = info_options(" linenos title=\"a b.rs\"  hl_lines='1 3' x=1 =y ");
+        let options: Vec<_> = options
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_deref()))
+            .collect();
+        assert_eq!(
+            options,
+            [
+                ("linenos", None),
+                ("title", Some("a b.rs")),
+                ("hl_lines", Some("1 3")),
+                ("x", Some("1")),
+                ("", Some("y")),
+            ]
+        );
+        assert!(info_options("").is_empty());
+        assert_eq!(info_options("t=\"open").len(), 1);
+    }
+
+    #[test]
+    fn titles_and_mkdocs_options_on_the_code_figure() {
+        use lsdocs_plugin_sdk::doctree::CodeBlock;
+        let html = render_nodes(vec![Node::CodeBlock(CodeBlock {
+            language: Some("rust".into()),
+            info: Some("title=\"src/<a>.rs\" linenums=\"3\" hl_lines=\"1 2-3\"".into()),
+            value: "a".into(),
+            ..CodeBlock::default()
+        })]);
+        assert_eq!(
+            html,
+            "<lsd-copy><figure class=\"lsd-code\" data-language=\"rust\" \
+             data-linenos data-line-start=\"3\" data-lines=\"1,2-3\">\
+             <figcaption class=\"lsd-code-title\">src/&lt;a&gt;.rs</figcaption>\
+             <pre><code class=\"language-rust\">a</code></pre></figure></lsd-copy>\n"
+        );
+    }
+
+    #[test]
     fn headings_link_to_themselves() {
         let html = body(&doc("a.md"), &Options::default());
         assert!(html.contains("class=\"lsd-anchor\""), "{html}");
@@ -573,8 +706,8 @@ mod tests {
             html,
             "<lsd-copy><figure class=\"lsd-code\" id=\"ex\" data-language=\"python\" \
              data-linenos data-line-start=\"5\" data-lines=\"1,3-4\">\
-             <pre><code class=\"language-python\">a = 1</code></pre>\
-             <figcaption>Example</figcaption></figure></lsd-copy>\n"
+             <figcaption class=\"lsd-code-title\">Example</figcaption>\
+             <pre><code class=\"language-python\">a = 1</code></pre></figure></lsd-copy>\n"
         );
     }
 

@@ -42,7 +42,8 @@ code, pre { font-family: ui-monospace, "Cascadia Code", Menlo, monospace; font-s
 code { background: var(--soft); padding: 0.1em 0.3em; border-radius: 4px; }
 pre { background: var(--soft); padding: 1rem; overflow-x: auto; border-radius: 6px; margin: 0; }
 .lsd-code { margin: 1rem 0; }
-.lsd-code figcaption { color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }
+.lsd-code-title { font-size: 0.875rem; font-weight: bold; margin-bottom: 0.25rem; }
+.lsd-code-title > p { color: var(--muted); font-weight: normal; margin: 0.1rem 0 0; }
 .lsd-table { overflow-x: auto; margin: 1rem 0; }
 .lsd-tab + .lsd-tab { margin-top: 1rem; }
 .lsd-tab::before { content: attr(data-label); display: block; font-weight: 600; color: var(--muted); }
