@@ -247,9 +247,9 @@ fn info_options(info: &str) -> Vec<(String, Option<String>)> {
 
 /// A code block (`code`: a code block, or a `custom:highlight` with its
 /// HTML) as `<lsd-copy><figure class="lsd-code">`, with the language,
-/// line numbers and emphasized lines as data, the title (`title=` in
-/// its info), if any, as a `div.lsd-code-title` before the `<pre>`, and
-/// the caption, if any, as a `figcaption` after it.
+/// line numbers and emphasized lines as data, and its caption and title
+/// (`title=` in its info), if any, as a `figcaption.lsd-code-title`
+/// before the `<pre>`.
 fn code_figure(
     opts: &Page<'_>,
     id: Option<&str>,
@@ -307,11 +307,30 @@ fn code_figure(
         }
     }
     out.push_str(&format!("<lsd-copy><figure{attrs}>"));
-    if let Some(title) = title {
-        out.push_str(&format!(
-            "<div class=\"lsd-code-title\">{}</div>",
+    // The title bar: the caption, or the `title=` text; with both, the
+    // title in `strong` and the caption in a paragraph under it.
+    match (title, caption) {
+        (None, None) => {}
+        (Some(title), None) => out.push_str(&format!(
+            "<figcaption class=\"lsd-code-title\">{}</figcaption>",
             escape(&title)
-        ));
+        )),
+        (None, Some(caption)) => wrap(
+            opts,
+            "figcaption",
+            " class=\"lsd-code-title\"",
+            &caption.children,
+            out,
+            false,
+        ),
+        (Some(title), Some(caption)) => {
+            out.push_str(&format!(
+                "<figcaption class=\"lsd-code-title\"><strong>{}</strong>",
+                escape(&title)
+            ));
+            wrap(opts, "p", "", &caption.children, out, false);
+            out.push_str("</figcaption>");
+        }
     }
     match (highlighted, block) {
         (Some(html), _) => out.push_str(html.trim_end_matches('\n')),
@@ -327,9 +346,6 @@ fn code_figure(
             ));
         }
         (None, None) => {}
-    }
-    if let Some(caption) = caption {
-        wrap(opts, "figcaption", "", &caption.children, out, false);
     }
     out.push_str("</figure></lsd-copy>\n");
 }
@@ -598,6 +614,31 @@ mod tests {
     }
 
     #[test]
+    fn a_title_and_a_caption_share_the_title_bar() {
+        use lsdocs_plugin_sdk::doctree::{CodeBlock, Figure};
+        let html = render_nodes(vec![Node::Figure(Figure {
+            children: vec![
+                Node::CodeBlock(CodeBlock {
+                    info: Some("title=a.py".into()),
+                    value: "a".into(),
+                    ..CodeBlock::default()
+                }),
+                Node::Caption(Caption {
+                    children: vec![text("Example")],
+                    ..Caption::default()
+                }),
+            ],
+            ..Figure::default()
+        })]);
+        assert_eq!(
+            html,
+            "<lsd-copy><figure class=\"lsd-code\"><figcaption class=\"lsd-code-title\">\
+             <strong>a.py</strong><p>Example</p></figcaption>\
+             <pre><code>a</code></pre></figure></lsd-copy>\n"
+        );
+    }
+
+    #[test]
     fn info_options_take_quoted_values() {
         let options = info_options(" linenos title=\"a b.rs\"  hl_lines='1 3' x=1 =y ");
         let options: Vec<_> = options
@@ -631,7 +672,7 @@ mod tests {
             html,
             "<lsd-copy><figure class=\"lsd-code\" data-language=\"rust\" \
              data-linenos data-line-start=\"3\" data-lines=\"1,2-3\">\
-             <div class=\"lsd-code-title\">src/&lt;a&gt;.rs</div>\
+             <figcaption class=\"lsd-code-title\">src/&lt;a&gt;.rs</figcaption>\
              <pre><code class=\"language-rust\">a</code></pre></figure></lsd-copy>\n"
         );
     }
@@ -665,8 +706,8 @@ mod tests {
             html,
             "<lsd-copy><figure class=\"lsd-code\" id=\"ex\" data-language=\"python\" \
              data-linenos data-line-start=\"5\" data-lines=\"1,3-4\">\
-             <pre><code class=\"language-python\">a = 1</code></pre>\
-             <figcaption>Example</figcaption></figure></lsd-copy>\n"
+             <figcaption class=\"lsd-code-title\">Example</figcaption>\
+             <pre><code class=\"language-python\">a = 1</code></pre></figure></lsd-copy>\n"
         );
     }
 

@@ -8,7 +8,7 @@ expression: html
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Test site</title>
-<link rel="stylesheet" href="_lsdocs/plain.ab6518be.css">
+<link rel="stylesheet" href="_lsdocs/plain.5b0548fc.css">
 </head>
 <body class="has-nav">
 <header><a href="index.html">Test site</a></header>
@@ -46,7 +46,7 @@ expression: html
     println!(&quot;hello&quot;);
 }
 </code></pre></figure></lsd-copy>
-<lsd-copy><figure class="lsd-code" data-language="toml" data-lines="2"><div class="lsd-code-title">lsdocs.toml</div><pre><code class="language-toml">[project]
+<lsd-copy><figure class="lsd-code" data-language="toml" data-lines="2"><figcaption class="lsd-code-title">lsdocs.toml</figcaption><pre><code class="language-toml">[project]
 name = &quot;test&quot;
 </code></pre></figure></lsd-copy>
 <section id="deeper">

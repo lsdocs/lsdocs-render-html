@@ -21,10 +21,11 @@ Items marked `[ ]` under TODO are also limitations until done.
   attributes), so they are not shown without JavaScript. The bands
   assume lines of one height (`pre` does not wrap) and use the CSS `lh`
   unit.
-- A code block's title comes only from `title=` in its fence's info
-  string (MkDocs' syntax, quotes optional); MkDocs' `linenums` and
-  `hl_lines` are read there too. A MyST `code-block`'s `:caption:` stays
-  a caption (a `figcaption` after the code), not a title.
+- A code block's title bar (`figcaption.lsd-code-title`, before the
+  code) shows its caption (`:caption:`) or `title=` from its fence's info
+  string (MkDocs' syntax, quotes optional); with both, the title is in
+  `strong` and the caption in a paragraph under it. MkDocs' `linenums`
+  and `hl_lines` are read from the info string too.
 
 ## TODO
 
