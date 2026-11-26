@@ -11,9 +11,12 @@ use lsdocs_plugin_sdk::relative_path;
 
 use crate::Options;
 
-/// Elements a block `custom` node may ask for with `html_tag`.
+/// Elements a block `custom` node may ask for with `html_tag`. A `pre`
+/// keeps its content's spaces and newlines; for text drawn like a code
+/// block, its child is an inline `custom` node asking for `code`, as code
+/// blocks are `pre` and `code`.
 const BLOCK_TAGS: &[&str] = &[
-    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "section", "aside", "nav",
+    "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "section", "aside", "nav", "pre",
 ];
 
 /// Elements an inline `custom` node may ask for with `html_tag`.
@@ -778,6 +781,46 @@ mod tests {
             "<div class=\"lsd-table\">\n<table>\n<tr><th>h</th></tr>\n</table>\n</div>\n\
              <div class=\"lsd-api-item\" data-kind=\"function\" data-scope=\"pkg.f\"></div>\n\
              <div class=\"lsd-toc\"></div>\n"
+        );
+    }
+
+    /// Preformatted text with markup in it (a grammar, say): `pre` and
+    /// `code`, as a code block, spaces and newlines kept.
+    #[test]
+    fn custom_preformatted_text() {
+        use lsdocs_plugin_sdk::doctree::{Custom, Link, Strong};
+        let code = Node::Custom(Custom {
+            kind: "productions".into(),
+            attrs: [
+                ("inline".to_owned(), serde_json::json!(true)),
+                ("html_tag".to_owned(), serde_json::json!("code")),
+            ]
+            .into(),
+            children: vec![
+                Node::Strong(Strong {
+                    children: vec![text("a")],
+                    ..Strong::default()
+                }),
+                text("   ::= "),
+                Node::Link(Link {
+                    url: "#b".into(),
+                    children: vec![text("b")],
+                    ..Link::default()
+                }),
+                text("\n  | <c>"),
+            ],
+            ..Custom::default()
+        });
+        let html = render_nodes(vec![Node::Custom(Custom {
+            kind: "productionlist".into(),
+            attrs: [("html_tag".to_owned(), serde_json::json!("pre"))].into(),
+            children: vec![code],
+            ..Custom::default()
+        })]);
+        assert_eq!(
+            html,
+            "<pre class=\"lsd-productionlist\"><code class=\"lsd-productions\">\
+             <strong>a</strong>   ::= <a href=\"#b\">b</a>\n  | &lt;c&gt;</code></pre>\n"
         );
     }
 
