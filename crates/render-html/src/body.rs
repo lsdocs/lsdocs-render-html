@@ -6,7 +6,9 @@
 //! HTML attribute), and `docs/content/reference/html-markup.md` lists
 //! them. Change them with care.
 
-use lsdocs_plugin_sdk::doctree::{Align, Caption, Document, Heading, Link, LinkTarget, Node};
+use lsdocs_plugin_sdk::doctree::{
+    Admonition, Align, Caption, CodeBlock, Custom, Document, Heading, Link, LinkTarget, Node,
+};
 use lsdocs_plugin_sdk::relative_path;
 
 use crate::Options;
@@ -552,6 +554,44 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
             }
             wrap(opts, tag, &attrs, &n.children, out, false);
         }
+        // A block with text `content` that no plugin turned into anything
+        // else (a directive nobody handles): a `div` holding a warning
+        // with its `argument` and `options` (as JSON) and its content as
+        // code blocks, then the children, so none of it is lost.
+        Node::Custom(n)
+            if n.attrs
+                .get("content")
+                .is_some_and(serde_json::Value::is_string) =>
+        {
+            let block = |title: &str, language: Option<&str>, value: String| {
+                Node::CodeBlock(CodeBlock {
+                    language: language.map(str::to_owned),
+                    info: Some(format!("title={title}")),
+                    value,
+                    ..CodeBlock::default()
+                })
+            };
+            let mut blocks = Vec::new();
+            for key in ["argument", "options"] {
+                if let Some(value) = n.attrs.get(key) {
+                    let json = serde_json::to_string_pretty(value).unwrap_or_default();
+                    blocks.push(block(key, Some("json"), json));
+                }
+            }
+            if let Some(content) = n.attrs.get("content").and_then(serde_json::Value::as_str) {
+                blocks.push(block("content", None, content.to_owned()));
+            }
+            out.push_str(&format!("<div{}>\n", custom_attrs(n)));
+            let warning = Node::Admonition(Admonition {
+                kind: "warning".into(),
+                title: Some(format!("Unknown doc tree node \"{}\"", n.kind)),
+                children: blocks,
+                ..Admonition::default()
+            });
+            render(opts, &warning, out);
+            children(opts, &n.children, out);
+            out.push_str("</div>\n");
+        }
         Node::Custom(n) => {
             let tag = n
                 .attrs
@@ -559,13 +599,19 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
                 .and_then(serde_json::Value::as_str)
                 .filter(|t| BLOCK_TAGS.contains(t))
                 .unwrap_or("div");
-            let mut attrs = format!(" class=\"lsd-{}\"", escape(&n.kind));
-            if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
-                attrs.push_str(&format!(" id=\"{}\"", escape(id)));
-            }
-            wrap(opts, tag, &attrs, &n.children, out, true);
+            wrap(opts, tag, &custom_attrs(n), &n.children, out, true);
         }
     }
+}
+
+/// A block `custom` node's attributes: `lsd-KIND` as its class, and its
+/// `id`, if any.
+fn custom_attrs(n: &Custom) -> String {
+    let mut attrs = format!(" class=\"lsd-{}\"", escape(&n.kind));
+    if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
+        attrs.push_str(&format!(" id=\"{}\"", escape(id)));
+    }
+    attrs
 }
 
 #[cfg(test)]
@@ -781,6 +827,40 @@ mod tests {
             "<div class=\"lsd-table\">\n<table>\n<tr><th>h</th></tr>\n</table>\n</div>\n\
              <div class=\"lsd-api-item\" data-kind=\"function\" data-scope=\"pkg.f\"></div>\n\
              <div class=\"lsd-toc\"></div>\n"
+        );
+    }
+
+    /// A node nobody handles keeps its class and id, and shows its
+    /// argument and options (as JSON) and its content in a warning.
+    #[test]
+    fn unknown_nodes_show_their_content_in_a_warning() {
+        let html = render_nodes(vec![Node::Custom(Custom {
+            kind: "example".into(),
+            attrs: [
+                ("argument".to_owned(), serde_json::json!("one two")),
+                ("options".to_owned(), serde_json::json!({"flag": true})),
+                ("id".to_owned(), serde_json::json!("x")),
+                ("content".to_owned(), serde_json::json!("a < b")),
+            ]
+            .into(),
+            ..Custom::default()
+        })]);
+        assert_eq!(
+            html,
+            "<div class=\"lsd-example\" id=\"x\">\n\
+             <div class=\"lsd-admonition\" data-kind=\"warning\">\n\
+             <p class=\"lsd-admonition-title\">Unknown doc tree node &quot;example&quot;</p>\n\
+             <lsd-copy><figure class=\"lsd-code\" data-language=\"json\">\
+             <figcaption class=\"lsd-code-title\">argument</figcaption>\
+             <pre><code class=\"language-json\">&quot;one two&quot;</code></pre></figure></lsd-copy>\n\
+             <lsd-copy><figure class=\"lsd-code\" data-language=\"json\">\
+             <figcaption class=\"lsd-code-title\">options</figcaption>\
+             <pre><code class=\"language-json\">{\n  &quot;flag&quot;: true\n}</code></pre>\
+             </figure></lsd-copy>\n\
+             <lsd-copy><figure class=\"lsd-code\">\
+             <figcaption class=\"lsd-code-title\">content</figcaption>\
+             <pre><code>a &lt; b</code></pre></figure></lsd-copy>\n\
+             </div>\n</div>\n"
         );
     }
 
