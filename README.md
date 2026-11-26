@@ -26,12 +26,14 @@ Items marked `[ ]` under TODO are also limitations until done.
   string (MkDocs' syntax, quotes optional); with both, the title is in
   `strong` and the caption in a paragraph under it. MkDocs' `linenums`
   and `hl_lines` are read from the info string too.
+- A directive no plugin handles (`mermaid` and the like: a block `custom`
+  node with text `content`) is drawn as its `div.lsd-KIND` holding a
+  warning admonition, titled `Unknown directive "KIND"`, around its
+  content as a plain code block. Its `argument` and `options` are not
+  shown, and a `custom` node without `content` is still an empty `div`.
 
 ## TODO
 
-- [ ] `render-html` draws `custom` nodes as an empty `div` with the kind as
-      its class, so the content of unknown directives (`mermaid` and the
-      like) is not shown unless a transformer handles it.
 - [ ] `render-html` loads its theme (and overrides) once per session, so
       `lsdocs serve` shows edits to a theme directory only after a
       restart (or a change under `.config/`). Report the theme's files as

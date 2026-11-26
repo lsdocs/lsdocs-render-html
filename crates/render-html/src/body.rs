@@ -6,7 +6,9 @@
 //! HTML attribute), and `docs/content/reference/html-markup.md` lists
 //! them. Change them with care.
 
-use lsdocs_plugin_sdk::doctree::{Align, Caption, Document, Heading, Link, LinkTarget, Node};
+use lsdocs_plugin_sdk::doctree::{
+    Admonition, Align, Caption, CodeBlock, Custom, Document, Heading, Link, LinkTarget, Node,
+};
 use lsdocs_plugin_sdk::relative_path;
 
 use crate::Options;
@@ -552,6 +554,34 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
             }
             wrap(opts, tag, &attrs, &n.children, out, false);
         }
+        // A block with text `content` that no plugin turned into anything
+        // else (a directive nobody handles, such as `mermaid`): a `div`
+        // holding the content as a code block in a warning, then the
+        // children, so the content is not lost.
+        Node::Custom(n)
+            if n.attrs
+                .get("content")
+                .is_some_and(serde_json::Value::is_string) =>
+        {
+            let content = n
+                .attrs
+                .get("content")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            out.push_str(&format!("<div{}>\n", custom_attrs(n)));
+            let warning = Node::Admonition(Admonition {
+                kind: "warning".into(),
+                title: Some(format!("Unknown directive \"{}\"", n.kind)),
+                children: vec![Node::CodeBlock(CodeBlock {
+                    value: content.to_owned(),
+                    ..CodeBlock::default()
+                })],
+                ..Admonition::default()
+            });
+            render(opts, &warning, out);
+            children(opts, &n.children, out);
+            out.push_str("</div>\n");
+        }
         Node::Custom(n) => {
             let tag = n
                 .attrs
@@ -559,13 +589,19 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
                 .and_then(serde_json::Value::as_str)
                 .filter(|t| BLOCK_TAGS.contains(t))
                 .unwrap_or("div");
-            let mut attrs = format!(" class=\"lsd-{}\"", escape(&n.kind));
-            if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
-                attrs.push_str(&format!(" id=\"{}\"", escape(id)));
-            }
-            wrap(opts, tag, &attrs, &n.children, out, true);
+            wrap(opts, tag, &custom_attrs(n), &n.children, out, true);
         }
     }
+}
+
+/// A block `custom` node's attributes: `lsd-KIND` as its class, and its
+/// `id`, if any.
+fn custom_attrs(n: &Custom) -> String {
+    let mut attrs = format!(" class=\"lsd-{}\"", escape(&n.kind));
+    if let Some(id) = n.attrs.get("id").and_then(serde_json::Value::as_str) {
+        attrs.push_str(&format!(" id=\"{}\"", escape(id)));
+    }
+    attrs
 }
 
 #[cfg(test)]
@@ -781,6 +817,33 @@ mod tests {
             "<div class=\"lsd-table\">\n<table>\n<tr><th>h</th></tr>\n</table>\n</div>\n\
              <div class=\"lsd-api-item\" data-kind=\"function\" data-scope=\"pkg.f\"></div>\n\
              <div class=\"lsd-toc\"></div>\n"
+        );
+    }
+
+    /// A directive nobody handles keeps its class and id, and shows its
+    /// content as a code block in a warning.
+    #[test]
+    fn unknown_directives_show_their_content_in_a_warning() {
+        let html = render_nodes(vec![Node::Custom(Custom {
+            kind: "mermaid".into(),
+            attrs: [
+                ("argument".to_owned(), serde_json::json!("flow")),
+                ("id".to_owned(), serde_json::json!("m")),
+                (
+                    "content".to_owned(),
+                    serde_json::json!("graph TD\n  A --> B"),
+                ),
+            ]
+            .into(),
+            ..Custom::default()
+        })]);
+        assert_eq!(
+            html,
+            "<div class=\"lsd-mermaid\" id=\"m\">\n\
+             <div class=\"lsd-admonition\" data-kind=\"warning\">\n\
+             <p class=\"lsd-admonition-title\">Unknown directive &quot;mermaid&quot;</p>\n\
+             <lsd-copy><figure class=\"lsd-code\"><pre><code>graph TD\n  A --&gt; B</code></pre>\
+             </figure></lsd-copy>\n</div>\n</div>\n"
         );
     }
 
