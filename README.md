@@ -26,11 +26,12 @@ Items marked `[ ]` under TODO are also limitations until done.
   string (MkDocs' syntax, quotes optional); with both, the title is in
   `strong` and the caption in a paragraph under it. MkDocs' `linenums`
   and `hl_lines` are read from the info string too.
-- A directive no plugin handles (`mermaid` and the like: a block `custom`
-  node with text `content`) is drawn as its `div.lsd-KIND` holding a
-  warning admonition, titled `Unknown directive "KIND"`, around its
-  content as a plain code block. Its `argument` and `options` are not
-  shown, and a `custom` node without `content` is still an empty `div`.
+- A block `custom` node with text `content` that no plugin handled (a
+  directive nobody declared, say) is drawn as its `div.lsd-KIND` holding
+  a warning admonition, titled `Unknown doc tree node "KIND"`, with code
+  blocks titled `argument` and `options` (their values as JSON, if set)
+  and `content` (plain). A `custom` node without `content` is still an
+  empty `div`.
 
 ## TODO
 

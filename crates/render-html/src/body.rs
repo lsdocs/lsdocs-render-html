@@ -555,27 +555,37 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
             wrap(opts, tag, &attrs, &n.children, out, false);
         }
         // A block with text `content` that no plugin turned into anything
-        // else (a directive nobody handles, such as `mermaid`): a `div`
-        // holding the content as a code block in a warning, then the
-        // children, so the content is not lost.
+        // else (a directive nobody handles): a `div` holding a warning
+        // with its `argument` and `options` (as JSON) and its content as
+        // code blocks, then the children, so none of it is lost.
         Node::Custom(n)
             if n.attrs
                 .get("content")
                 .is_some_and(serde_json::Value::is_string) =>
         {
-            let content = n
-                .attrs
-                .get("content")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
+            let block = |title: &str, language: Option<&str>, value: String| {
+                Node::CodeBlock(CodeBlock {
+                    language: language.map(str::to_owned),
+                    info: Some(format!("title={title}")),
+                    value,
+                    ..CodeBlock::default()
+                })
+            };
+            let mut blocks = Vec::new();
+            for key in ["argument", "options"] {
+                if let Some(value) = n.attrs.get(key) {
+                    let json = serde_json::to_string_pretty(value).unwrap_or_default();
+                    blocks.push(block(key, Some("json"), json));
+                }
+            }
+            if let Some(content) = n.attrs.get("content").and_then(serde_json::Value::as_str) {
+                blocks.push(block("content", None, content.to_owned()));
+            }
             out.push_str(&format!("<div{}>\n", custom_attrs(n)));
             let warning = Node::Admonition(Admonition {
                 kind: "warning".into(),
-                title: Some(format!("Unknown directive \"{}\"", n.kind)),
-                children: vec![Node::CodeBlock(CodeBlock {
-                    value: content.to_owned(),
-                    ..CodeBlock::default()
-                })],
+                title: Some(format!("Unknown doc tree node \"{}\"", n.kind)),
+                children: blocks,
                 ..Admonition::default()
             });
             render(opts, &warning, out);
@@ -820,30 +830,37 @@ mod tests {
         );
     }
 
-    /// A directive nobody handles keeps its class and id, and shows its
-    /// content as a code block in a warning.
+    /// A node nobody handles keeps its class and id, and shows its
+    /// argument and options (as JSON) and its content in a warning.
     #[test]
-    fn unknown_directives_show_their_content_in_a_warning() {
+    fn unknown_nodes_show_their_content_in_a_warning() {
         let html = render_nodes(vec![Node::Custom(Custom {
-            kind: "mermaid".into(),
+            kind: "example".into(),
             attrs: [
-                ("argument".to_owned(), serde_json::json!("flow")),
-                ("id".to_owned(), serde_json::json!("m")),
-                (
-                    "content".to_owned(),
-                    serde_json::json!("graph TD\n  A --> B"),
-                ),
+                ("argument".to_owned(), serde_json::json!("one two")),
+                ("options".to_owned(), serde_json::json!({"flag": true})),
+                ("id".to_owned(), serde_json::json!("x")),
+                ("content".to_owned(), serde_json::json!("a < b")),
             ]
             .into(),
             ..Custom::default()
         })]);
         assert_eq!(
             html,
-            "<div class=\"lsd-mermaid\" id=\"m\">\n\
+            "<div class=\"lsd-example\" id=\"x\">\n\
              <div class=\"lsd-admonition\" data-kind=\"warning\">\n\
-             <p class=\"lsd-admonition-title\">Unknown directive &quot;mermaid&quot;</p>\n\
-             <lsd-copy><figure class=\"lsd-code\"><pre><code>graph TD\n  A --&gt; B</code></pre>\
-             </figure></lsd-copy>\n</div>\n</div>\n"
+             <p class=\"lsd-admonition-title\">Unknown doc tree node &quot;example&quot;</p>\n\
+             <lsd-copy><figure class=\"lsd-code\" data-language=\"json\">\
+             <figcaption class=\"lsd-code-title\">argument</figcaption>\
+             <pre><code class=\"language-json\">&quot;one two&quot;</code></pre></figure></lsd-copy>\n\
+             <lsd-copy><figure class=\"lsd-code\" data-language=\"json\">\
+             <figcaption class=\"lsd-code-title\">options</figcaption>\
+             <pre><code class=\"language-json\">{\n  &quot;flag&quot;: true\n}</code></pre>\
+             </figure></lsd-copy>\n\
+             <lsd-copy><figure class=\"lsd-code\">\
+             <figcaption class=\"lsd-code-title\">content</figcaption>\
+             <pre><code>a &lt; b</code></pre></figure></lsd-copy>\n\
+             </div>\n</div>\n"
         );
     }
 
