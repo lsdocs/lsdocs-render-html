@@ -2,7 +2,7 @@
 //! it, and checking a site's settings for it against its `theme.toml`.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -176,6 +176,50 @@ fn manifest(spec: &str, bytes: &[u8]) -> Result<(toml::Table, bool), String> {
         ));
     }
     Ok((settings, search))
+}
+
+/// What the theme is read from, so a change to any of it can reload the
+/// theme: for a directory theme (and for the overrides), the directory,
+/// its `theme.toml`, its `templates` and `assets` directories (whether or
+/// not they exist) and everything in them, as absolute paths. Directories
+/// are listed so a watcher sees files added or removed. None for a
+/// built-in theme without overrides.
+pub fn watched(spec: &str, root: &Path, overrides: Option<&Path>) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            let is_dir = path.is_dir();
+            out.push(path.clone());
+            if is_dir {
+                walk(&path, out);
+            }
+        }
+    }
+    let mut dirs = Vec::new();
+    if !built_in::BUILT_IN.iter().any(|(name, _)| *name == spec) {
+        dirs.push((root.join(spec), true));
+    }
+    if let Some(overrides) = overrides {
+        dirs.push((root.join(overrides), false));
+    }
+    let mut out = Vec::new();
+    for (dir, is_theme) in dirs {
+        let dir = std::path::absolute(&dir).unwrap_or(dir);
+        out.push(dir.clone());
+        if is_theme {
+            out.push(dir.join("theme.toml"));
+        }
+        for sub in ["templates", "assets"] {
+            let sub = dir.join(sub);
+            out.push(sub.clone());
+            walk(&sub, &mut out);
+        }
+    }
+    out
 }
 
 /// Every file under `dir`'s `templates/` and `assets/`, as
