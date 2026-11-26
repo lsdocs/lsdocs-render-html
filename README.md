@@ -48,8 +48,10 @@ From the flagship theme's plan (Phase 13):
 
 - [~] Content components themes style. Done: content tabs (`tab-set` /
       `tab-item` directives, sphinx-design's names, in the `extras`
-      plugin, for both parsers) and
-      copy buttons, line numbers, highlighted lines and code block
-      titles. Not done, and on the TODO list: buttons, icons and emoji,
-      and MkDocs-style `===` tab blocks.
+      plugin, for both parsers), buttons (`button-link` / `button-ref`,
+      the same way), and copy buttons, line numbers, highlighted lines
+      and code block titles. Not done, and on the TODO list: icons and
+      emoji, MkDocs-style `===` tab blocks, and MkDocs' button syntax
+      (`[text](url){ .md-button }`, which needs attribute lists in the
+      Markdown parser).
 - [ ] Instant navigation, code annotations, navigation tabs.

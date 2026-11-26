@@ -9,7 +9,7 @@ expression: html
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>try{var s=localStorage.getItem("lsd-scheme");if(s==="light"||s==="dark"||s==="auto")document.documentElement.setAttribute("data-lsd-scheme",s)}catch(e){}</script>
 <title>Setup | Test site</title>
-<link rel="stylesheet" href="../_lsdocs/content.7e42dc41.css">
+<link rel="stylesheet" href="../_lsdocs/content.c951ff90.css">
 <link rel="stylesheet" href="../_lsdocs/theme.5b6ee754.css">
 <script type="importmap">{"imports":{"../_lsdocs/js/copy.js":"../_lsdocs/js/copy.40b662e7.js","../_lsdocs/js/labels.js":"../_lsdocs/js/labels.2b43cd3a.js","../_lsdocs/js/lines.js":"../_lsdocs/js/lines.31adddef.js","../_lsdocs/js/main.js":"../_lsdocs/js/main.677fe2e1.js","../_lsdocs/js/palette.js":"../_lsdocs/js/palette.87e930d9.js","../_lsdocs/js/search-worker.js":"../_lsdocs/js/search-worker.44f87d98.js","../_lsdocs/js/search.js":"../_lsdocs/js/search.44dfbb00.js","../_lsdocs/js/state.js":"../_lsdocs/js/state.73863860.js","../_lsdocs/js/tabs.js":"../_lsdocs/js/tabs.2cca5b7a.js","../_lsdocs/js/toc.js":"../_lsdocs/js/toc.2b07f1ba.js","../_lsdocs/js/vendor/signals-core.mjs":"../_lsdocs/js/vendor/signals-core.a8fd2fea.mjs"}}</script>
 <script type="application/json" id="lsd-labels">{"copied": "Copied to clipboard", "copy": "Copy to clipboard", "copy_failed": "Copy failed", "scheme": "Color scheme", "scheme_auto": "System", "scheme_dark": "Dark", "scheme_light": "Light", "search": "Search", "search_close": "Close", "search_failed": "Search is unavailable", "search_many": "{count} results", "search_none": "No results", "search_one": "1 result", "search_placeholder": "Search the site"}</script>

@@ -49,6 +49,13 @@ pre { background: var(--soft); padding: 1rem; overflow-x: auto; border-radius: 6
 .lsd-tab::before { content: attr(data-label); display: block; font-weight: 600; color: var(--muted); }
 lsd-tabs:defined .lsd-tab::before { display: none; }
 pre code { background: none; padding: 0; }
+.lsd-button-row[data-align="center"] { text-align: center; }
+.lsd-button-row[data-align="right"] { text-align: right; }
+.lsd-button { display: inline-block; padding: 0.4rem 1rem; font-weight: 600;
+  text-decoration: none; color: var(--accent); border: 1px solid currentColor; border-radius: 6px; }
+.lsd-button[data-color]:not([data-outline]) { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.lsd-button[data-expand] { display: block; text-align: center; }
+.lsd-button:hover { opacity: 0.85; }
 blockquote { margin: 0; padding: 0 1rem; color: var(--muted); border-left: 4px solid var(--border); }
 table { border-collapse: collapse; }
 th, td { border: 1px solid var(--border); padding: 0.3rem 0.75rem; }
