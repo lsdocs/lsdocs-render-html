@@ -540,6 +540,41 @@ fn render(opts: &Page<'_>, node: &Node, out: &mut String) {
             }
             wrap(opts, "div", &attrs, &n.children, out, true);
         }
+        // A button (the `extras` plugin's `button-link` / `button-ref`): a
+        // paragraph, aligned by `align`, whose links are `a.lsd-button`s
+        // with the color, `outline` and `expand` as data.
+        Node::Custom(n) if n.kind == "button" => {
+            let attr = |key: &str| n.attrs.get(key).and_then(serde_json::Value::as_str);
+            let flag = |key: &str| n.attrs.get(key) == Some(&serde_json::Value::Bool(true));
+            let mut row = String::from(" class=\"lsd-button-row\"");
+            if let Some(align) = attr("align") {
+                row.push_str(&format!(" data-align=\"{}\"", escape(align)));
+            }
+            let mut data = String::new();
+            if let Some(color) = attr("color") {
+                data.push_str(&format!(" data-color=\"{}\"", escape(color)));
+            }
+            for key in ["outline", "expand"] {
+                if flag(key) {
+                    data.push_str(&format!(" data-{key}"));
+                }
+            }
+            out.push_str(&format!("<p{row}>"));
+            for child in &n.children {
+                match child {
+                    Node::Link(link) => {
+                        let attrs = format!(
+                            " class=\"lsd-button\" href=\"{}\"{}{data}",
+                            escape(&link_href(opts.source, link)),
+                            title_attr(&link.title)
+                        );
+                        wrap(opts, "a", &attrs, &link.children, out, false);
+                    }
+                    other => render(opts, other, out),
+                }
+            }
+            out.push_str("</p>\n");
+        }
         // An inline custom node: a span, or one of a few inline elements.
         Node::Custom(n) if n.attrs.get("inline") == Some(&serde_json::Value::Bool(true)) => {
             let tag = n
@@ -861,6 +896,53 @@ mod tests {
              <figcaption class=\"lsd-code-title\">content</figcaption>\
              <pre><code>a &lt; b</code></pre></figure></lsd-copy>\n\
              </div>\n</div>\n"
+        );
+    }
+
+    /// A button is a paragraph around `a.lsd-button`, its options as
+    /// data, its link resolved as any other.
+    #[test]
+    fn buttons_are_links_in_a_row() {
+        use lsdocs_plugin_sdk::doctree::Link;
+        let button = |attrs: serde_json::Value, link: Link| {
+            Node::Custom(Custom {
+                kind: "button".into(),
+                attrs: serde_json::from_value(attrs).unwrap(),
+                children: vec![Node::Link(link)],
+                ..Custom::default()
+            })
+        };
+        let html = render_nodes(vec![
+            button(
+                serde_json::json!({"color": "primary", "outline": true, "align": "center"}),
+                Link {
+                    url: "guide.md".into(),
+                    title: Some("Read <it>".into()),
+                    children: vec![text("Start")],
+                    ..Link::default()
+                },
+            ),
+            button(
+                serde_json::json!({"expand": true}),
+                Link {
+                    url: "#x".into(),
+                    target: Some(LinkTarget {
+                        document: Some("b/c.rst".into()),
+                        anchor: Some("x".into()),
+                        label: None,
+                    }),
+                    children: vec![text("C")],
+                    ..Link::default()
+                },
+            ),
+        ]);
+        assert_eq!(
+            html,
+            "<p class=\"lsd-button-row\" data-align=\"center\">\
+             <a class=\"lsd-button\" href=\"guide.html\" title=\"Read &lt;it&gt;\" \
+             data-color=\"primary\" data-outline>Start</a></p>\n\
+             <p class=\"lsd-button-row\">\
+             <a class=\"lsd-button\" href=\"b/c.html#x\" data-expand>C</a></p>\n"
         );
     }
 

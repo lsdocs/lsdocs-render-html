@@ -142,7 +142,7 @@
 
     &:is(:hover, :focus-visible) { color: var(--lsd-accent); }
   }
-  .lsd-article a:not(.lsd-anchor) {
+  .lsd-article a:not(.lsd-anchor, .lsd-button) {
     text-decoration: underline;
     text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
     text-underline-offset: 0.2em;
@@ -426,6 +426,54 @@
     &:is(:hover, :focus-visible) { color: var(--lsd-accent); }
     &:focus-visible { outline: 2px solid var(--lsd-accent); outline-offset: -2px; }
     &[aria-selected="true"] { color: var(--lsd-link); border-bottom-color: currentColor; }
+  }
+
+  /* Buttons (`button-link` / `button-ref`). Without a color, a button is
+     outlined in the link color; with one, filled in it (outlined with
+     `outline`). Colors are sphinx-design's names. */
+  .lsd-button-row {
+    &[data-align="center"] { text-align: center; }
+    &[data-align="right"] { text-align: right; }
+  }
+  .lsd-button {
+    --lsd-button: var(--lsd-link);
+    --lsd-button-fg: var(--lsd-primary-fg);
+    display: inline-block;
+    padding: 0.5em 1.25em;
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--lsd-button);
+    border: 0.1rem solid currentColor;
+    border-radius: 0.1rem;
+    transition: color 125ms, background-color 125ms, border-color 125ms;
+
+    &[data-color] {
+      color: var(--lsd-button-fg);
+      background: var(--lsd-button);
+      border-color: var(--lsd-button);
+    }
+    &[data-color][data-outline] { color: var(--lsd-button); background: none; }
+    &[data-expand] { display: block; }
+    &:is(:hover, :focus-visible) {
+      color: var(--lsd-primary-fg);
+      background: var(--lsd-accent);
+      border-color: var(--lsd-accent);
+    }
+
+    &[data-color="primary"] { --lsd-button: var(--lsd-primary); }
+    /* Outlined, the color is text on the page: the readable link color. */
+    &[data-color="primary"][data-outline] { --lsd-button: var(--lsd-link); }
+    &[data-color="secondary"] { --lsd-button: light-dark(#5e6772, #9aa3ae); }
+    &[data-color="success"] { --lsd-button: light-dark(#1b8a3e, #3fb764); }
+    &[data-color="info"] { --lsd-button: light-dark(#0b7d93, #34b6cf); }
+    &[data-color="warning"] { --lsd-button: #ff9100; --lsd-button-fg: #000; }
+    &[data-color="danger"] { --lsd-button: light-dark(#d32f2f, #ef5350); }
+    &[data-color="muted"] { --lsd-button: var(--lsd-fg-muted); --lsd-button-fg: var(--lsd-bg); }
+    &[data-color="light"] { --lsd-button: #f5f5f7; --lsd-button-fg: #000; }
+    &[data-color="dark"] { --lsd-button: #36464e; --lsd-button-fg: #fff; }
+    &[data-color="white"] { --lsd-button: #fff; --lsd-button-fg: #000; }
+    &[data-color="black"] { --lsd-button: #000; --lsd-button-fg: #fff; }
   }
 
   /* API items. */
