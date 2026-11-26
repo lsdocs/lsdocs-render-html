@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/lsdocs/lsdocs-render-html/compare/lsdocs-render-html/v0.1.0...lsdocs-render-html/v0.1.1) - 2026-11-26
+
+### Added
+
+- buttons ([#29](https://github.com/lsdocs/lsdocs-render-html/pull/29))
+- report a theme directory's files as settings files ([#28](https://github.com/lsdocs/lsdocs-render-html/pull/28))
+- *(body)* show unknown doc tree nodes in a warning ([#27](https://github.com/lsdocs/lsdocs-render-html/pull/27))
+- *(body)* let block custom nodes ask for a pre ([#26](https://github.com/lsdocs/lsdocs-render-html/pull/26))
+- code block line numbers, highlighted lines and titles ([#25](https://github.com/lsdocs/lsdocs-render-html/pull/25))
+
+### Other
+
+- parse with lsdocs-parser-markdown's myst dialect ([#23](https://github.com/lsdocs/lsdocs-render-html/pull/23))
+
 ## [0.1.0](https://github.com/lsdocs/lsdocs-render-html/releases/tag/lsdocs-render-html/v0.1.0) - 2026-11-23
 
 ### Added
