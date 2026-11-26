@@ -32,17 +32,14 @@ Items marked `[ ]` under TODO are also limitations until done.
   blocks titled `argument` and `options` (their values as JSON, if set)
   and `content` (plain). A `custom` node without `content` is still an
   empty `div`.
+- The theme (and overrides) are loaded once per session. A theme
+  directory's files and directories, and the overrides', are reported as
+  settings files (`config_files`, absolute paths), so the host's cache
+  keys cover them and `lsdocs serve` restarts the plugins, reloading the
+  theme, when one changes. Built-in themes report none.
 
 ## TODO
 
-- [ ] `render-html` loads its theme (and overrides) once per session, so
-      `lsdocs serve` shows edits to a theme directory only after a
-      restart (or a change under `.config/`). Report the theme's files as
-      render dependencies, or reload the theme when they change.
-- [ ] Old hashed theme assets accumulate in the output directory across
-      separate builds and `serve` restarts (`crates/host/src/lib.rs`
-      prunes only within one `Session`). Keep a manifest of written
-      assets in `.lsdocs-cache/` and prune against it.
 - [ ] The `default` theme's social icons are a few generic ones drawn for
       it (`link`, `mail`, `rss`, `chat`, `code`) or an image; no brand
       icons (GitHub, Mastodon, ...) yet, which need a licensed icon set.

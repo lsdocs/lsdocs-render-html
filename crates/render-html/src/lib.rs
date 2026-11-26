@@ -129,7 +129,7 @@ type Json = lsdocs_plugin_sdk::doctree::Value;
 pub fn plugin() -> Plugin {
     Plugin::new("render-html", env!("CARGO_PKG_VERSION"))
         .settings(|c| {
-            settings_toml_keys(
+            let mut loaded = settings_toml_keys(
                 c,
                 &[
                     ("theme", Kind::String),
@@ -138,7 +138,26 @@ pub fn plugin() -> Plugin {
                     ("heading_anchors", Kind::Bool),
                     ("sitemap", Kind::Bool),
                 ],
-            )
+            )?;
+            // A theme directory's files count as settings files: the
+            // host's cache keys cover them, and `lsdocs serve` restarts
+            // the plugin (reloading the theme) when one changes.
+            let root = Path::new(&c.dir).parent().unwrap_or(Path::new(""));
+            let spec = loaded
+                .settings
+                .get("theme")
+                .and_then(|t| t.as_str())
+                .unwrap_or(DEFAULT_THEME);
+            let overrides = loaded
+                .settings
+                .get("overrides")
+                .and_then(|o| o.as_str())
+                .map(Path::new);
+            let watched = theme::watched(spec, root, overrides);
+            loaded
+                .files
+                .extend(watched.iter().map(|p| p.to_string_lossy().into_owned()));
+            Ok(loaded)
         })
         .renderer(Html::default())
         .cache_key(cache_key)
@@ -866,6 +885,59 @@ mod tests {
             cache_key(&init(serde_json::json!({"theme": "plain"}))).unwrap(),
             built_in
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A theme directory and the overrides are settings files (so `lsdocs
+    /// serve` restarts the plugin when they change); built-in themes are
+    /// not.
+    #[test]
+    fn theme_directories_are_settings_files() {
+        let dir = temp("watched");
+        let setup = || {
+            plugin()
+                .setup(&InitializeParams {
+                    config: lsdocs_plugin_sdk::protocol::ConfigInfo {
+                        dir: dir.join(".config").to_string_lossy().into_owned(),
+                        name: "html".into(),
+                    },
+                    ..InitializeParams::default()
+                })
+                .unwrap()
+                .config_files
+        };
+        let builtin = setup();
+        assert!(
+            builtin.iter().all(|f| !Path::new(f).is_absolute()),
+            "{builtin:?}"
+        );
+        write(
+            &dir.join(".config/lsdocs/html/settings.toml"),
+            "theme = \"t\"\noverrides = \"o\"\n",
+        );
+        write(&dir.join("t/theme.toml"), "");
+        write(&dir.join("t/templates/page.html"), "a");
+        write(&dir.join("o/assets/x.css"), "b");
+        let files = setup();
+        let abs = std::path::absolute(&dir).unwrap();
+        for path in [
+            "t",
+            "t/theme.toml",
+            "t/templates",
+            "t/templates/page.html",
+            "t/assets",
+            "o",
+            "o/templates",
+            "o/assets",
+            "o/assets/x.css",
+        ] {
+            let path = path
+                .split('/')
+                .fold(abs.clone(), |p, part| p.join(part))
+                .to_string_lossy()
+                .into_owned();
+            assert!(files.contains(&path), "{path} not in {files:?}");
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
